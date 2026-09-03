@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Donation Submissions</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #f7f7f8; }
+  h2 { font-size: 20px; margin-bottom: 4px; }
+  #meta { color: #666; font-size: 13px; margin-bottom: 16px; }
+  #refreshBtn { padding: 8px 14px; border: 1px solid #2563eb; background: white; color: #2563eb;
+    border-radius: 6px; cursor: pointer; font-size: 13px; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 14px; vertical-align: top; }
+  th { background: #111827; color: white; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover { background: #fafafa; }
+  .status { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;
+    background: #dbeafe; color: #1e40af; text-transform: capitalize; }
+  .item-row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+  .item-name { text-transform: capitalize; font-weight: 500; }
+  .item-qty { color: #666; }
+  .conf-high { color: #16a34a; }
+  .conf-low { color: #b45309; }
+  .conf-manual { color: #6b7280; font-style: italic; }
+  .donor-name { font-weight: 600; }
+  .no-donor { color: #999; font-style: italic; }
+  .total-count { font-weight: 700; font-size: 16px; color: #111827; }
+  .total-count small { display: block; font-weight: 400; font-size: 11px; color: #999; }
+  #status { color: #666; font-size: 13px; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<h2>Donation Submissions</h2>
+<div id="meta"></div>
+<button id="refreshBtn">Refresh</button>
+<div id="status"></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Donor</th>
+      <th>Items</th>
+      <th>Total Count</th>
+      <th>Status</th>
+      <th>Submitted</th>
+    </tr>
+  </thead>
+  <tbody id="tableBody"></tbody>
+</table>
+
+<script>
+// ---------------------------------------------------------------------
+// CONFIG — point this at wherever main.py is actually running.
+// ---------------------------------------------------------------------
+const API_BASE = "http://localhost:8000";
+
+const tableBody = document.getElementById("tableBody");
+const metaEl = document.getElementById("meta");
+const statusEl = document.getElementById("status");
+const refreshBtn = document.getElementById("refreshBtn");
+
+function formatConfidence(conf) {
+  if (conf === null || conf === undefined) {
+    return `<span class="conf-manual">manually added</span>`;
+  }
+  const pct = Math.round(conf * 100);
+  const cls = pct >= 50 ? "conf-high" : "conf-low";
+  return `<span class="${cls}">${pct}% confident</span>`;
+}
+
+function formatDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "2-digit", minute: "2-digit"
+  });
+}
+
+async function loadSubmissions() {
+  statusEl.textContent = "Loading...";
+  try {
+    const res = await fetch(`${API_BASE}/submissions?limit=100`);
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    const data = await res.json();
+
+    metaEl.textContent = `${data.count} submission(s)`;
+    tableBody.innerHTML = "";
+
+    if (data.count === 0) {
+      tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#999;padding:24px;">
+        No submissions yet.</td></tr>`;
+    }
+
+    let grandTotalItems = 0;
+
+    data.submissions.forEach(sub => {
+      const itemsHtml = sub.items.map(item => `
+        <div class="item-row">
+          <span class="item-name">${item.class}</span>
+          <span class="item-qty">x${item.quantity}</span>
+          ${formatConfidence(item.confidence)}
+        </div>
+      `).join("");
+
+      const donorHtml = sub.donor_name
+        ? `<span class="donor-name">${sub.donor_name}</span>`
+        : `<span class="no-donor">Not provided</span>`;
+
+      const totalQty = sub.items.reduce((sum, item) => sum + item.quantity, 0);
+      const typeCount = sub.items.length;
+      grandTotalItems += totalQty;
+
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${donorHtml}</td>
+        <td>${itemsHtml || "<em>No items</em>"}</td>
+        <td><span class="total-count">${totalQty}<small>${typeCount} type(s)</small></span></td>
+        <td><span class="status">${sub.status}</span></td>
+        <td>${formatDate(sub.created_at)}</td>
+      `;
+      tableBody.appendChild(row);
+    });
+
+    metaEl.textContent = `${data.count} submission(s) — ${grandTotalItems} item(s) total`;
+    statusEl.textContent = "";
+  } catch (err) {
+    statusEl.textContent = "Failed to load: " + err.message;
+  }
+}
+
+refreshBtn.addEventListener("click", loadSubmissions);
+loadSubmissions();
+</script>
+</body>
+</html>

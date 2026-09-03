@@ -1,0 +1,14 @@
+venv/
+__pycache__/
+*.py[cod]
+
+raw_datasets/
+dataset_unified/
+label_preview/
+runs/
+weights/
+
+.env
+*.db
+*.sqlite
+*.sqlite3
