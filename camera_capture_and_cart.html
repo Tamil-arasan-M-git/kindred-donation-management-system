@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Donation Item Scanner</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 16px; background: #f7f7f8; }
+  h2 { font-size: 18px; }
+  video, canvas { width: 100%; border-radius: 8px; background: #000; }
+  #captureBtn, #retakeBtn, #submitBtn, #uploadBtn { width: 100%; padding: 12px; margin-top: 10px; border: none;
+    border-radius: 8px; font-size: 16px; cursor: pointer; }
+  #captureBtn, #submitBtn { background: #2563eb; color: white; }
+  #uploadBtn { background: #ffffff; color: #2563eb; border: 1px solid #2563eb !important; }
+  #retakeBtn { background: #e5e7eb; color: #111; }
+  #status { text-align: center; color: #666; margin: 8px 0; font-size: 14px; }
+  .cart-item { display: flex; align-items: center; gap: 8px; background: white; padding: 10px;
+    border-radius: 8px; margin-bottom: 8px; border: 1px solid #e5e7eb; }
+  .cart-item.needs-review { border-color: #f59e0b; background: #fffbeb; }
+  .cart-item .name { flex: 1; font-weight: 600; text-transform: capitalize; }
+  .cart-item .conf { font-size: 12px; color: #888; }
+  .cart-item input[type=number] { width: 50px; padding: 4px; border: 1px solid #ccc; border-radius: 4px; }
+  .cart-item button { background: #ef4444; color: white; border: none; border-radius: 4px;
+    padding: 4px 8px; cursor: pointer; }
+  .review-tag { font-size: 11px; color: #b45309; }
+  #cameraView, #cartView { display: none; }
+  #cameraView.active, #cartView.active { display: block; }
+  .divider { text-align: center; color: #999; font-size: 12px; margin: 10px 0; }
+  #donorField { margin-bottom: 10px; }
+  #donorField label { display: block; font-size: 13px; color: #444; margin-bottom: 4px; }
+  #donorField input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px;
+    box-sizing: border-box; }
+  #manualAdd { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
+  #manualAdd select { flex: 2; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; }
+  #manualAdd input[type=number] { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; }
+  #manualAdd button { flex: 1; padding: 10px; border: none; border-radius: 8px; background: #16a34a; color: white;
+    font-size: 14px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<h2>Scan an item to donate</h2>
+
+<!-- CAMERA CAPTURE + UPLOAD VIEW -->
+<div id="cameraView" class="active">
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas" style="display:none;"></canvas>
+  <button id="captureBtn">Take photo</button>
+  <div class="divider">— or —</div>
+  <button id="uploadBtn">Upload a photo instead</button>
+  <input type="file" id="uploadInput" accept="image/*" style="display:none;">
+  <div id="status"></div>
+</div>
+
+<!-- EDITABLE CART VIEW -->
+<div id="cartView">
+  <img id="previewImg" style="width:100%;border-radius:8px;margin-bottom:10px;">
+
+  <div id="donorField">
+    <label for="donorNameInput">Your name</label>
+    <input type="text" id="donorNameInput" placeholder="e.g. Priya Sharma">
+  </div>
+
+  <div id="cartList"></div>
+
+  <div id="manualAdd">
+    <div class="divider">Missing something? Add it manually</div>
+    <select id="manualCategory">
+      <option value="clothing">Clothing</option>
+      <option value="food">Food</option>
+      <option value="books">Books</option>
+      <option value="electronics">Electronics</option>
+      <option value="furniture">Furniture</option>
+      <option value="utensils">Utensils</option>
+    </select>
+    <input type="number" id="manualQty" min="1" value="1">
+    <button id="manualAddBtn">Add item</button>
+  </div>
+
+  <button id="retakeBtn">Retake / choose another photo</button>
+  <button id="submitBtn">Confirm and submit</button>
+  <div id="status"></div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------
+// CONFIG — point this at wherever main.py is actually running.
+// ---------------------------------------------------------------------
+const API_BASE = "http://localhost:8000";
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const cameraView = document.getElementById("cameraView");
+const cartView = document.getElementById("cartView");
+const captureBtn = document.getElementById("captureBtn");
+const uploadBtn = document.getElementById("uploadBtn");
+const uploadInput = document.getElementById("uploadInput");
+const retakeBtn = document.getElementById("retakeBtn");
+const submitBtn = document.getElementById("submitBtn");
+const statusEls = document.querySelectorAll("#status");
+const cartList = document.getElementById("cartList");
+const previewImg = document.getElementById("previewImg");
+const donorNameInput = document.getElementById("donorNameInput");
+const manualCategory = document.getElementById("manualCategory");
+const manualQty = document.getElementById("manualQty");
+const manualAddBtn = document.getElementById("manualAddBtn");
+
+let currentCart = [];   // editable list the donor is reviewing
+let stream = null;
+
+function setStatus(msg) {
+  statusEls.forEach(el => el.textContent = msg);
+}
+
+// -----------------------------------------------------------------
+// 1. CAMERA CAPTURE — MediaDevices API, works on mobile and desktop.
+//    facingMode "environment" prefers the rear camera on phones.
+// -----------------------------------------------------------------
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+      audio: false,
+    });
+    video.srcObject = stream;
+  } catch (err) {
+    // Common failure: no camera, or user denied permission. Upload
+    // button still works even if the camera itself isn't available.
+    setStatus("Camera unavailable (" + err.message + ") — you can still upload a photo.");
+  }
+}
+
+function stopCamera() {
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+    stream = null;
+  }
+}
+
+captureBtn.addEventListener("click", async () => {
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+
+  canvas.toBlob(async (blob) => {
+    previewImg.src = URL.createObjectURL(blob);
+    stopCamera();
+    cameraView.classList.remove("active");
+    cartView.classList.add("active");
+    await detectItems(blob);
+  }, "image/jpeg", 0.9);
+});
+
+// -----------------------------------------------------------------
+// 1b. UPLOAD A PHOTO INSTEAD — same detectItems() flow, different source.
+// -----------------------------------------------------------------
+uploadBtn.addEventListener("click", () => {
+  uploadInput.click();
+});
+
+uploadInput.addEventListener("change", async () => {
+  const file = uploadInput.files[0];
+  if (!file) return;
+
+  previewImg.src = URL.createObjectURL(file);
+  stopCamera();
+  cameraView.classList.remove("active");
+  cartView.classList.add("active");
+  await detectItems(file);
+});
+
+// -----------------------------------------------------------------
+// 2. SEND THE PHOTO TO THE BACKEND'S /detect ENDPOINT
+//    (works the same whether the photo came from the camera or upload)
+// -----------------------------------------------------------------
+async function detectItems(blob) {
+  setStatus("Detecting items...");
+  const formData = new FormData();
+  formData.append("file", blob, "capture.jpg");
+
+  try {
+    const res = await fetch(`${API_BASE}/detect`, { method: "POST", body: formData });
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    const data = await res.json();
+    currentCart = data.items.map(item => ({
+      class_name: item.class,
+      quantity: item.quantity,
+      confidence: item.confidence,
+      needs_review: item.needs_review,
+    }));
+    renderCart();
+    setStatus(currentCart.length ? "" : "No items detected — try retaking/choosing another photo.");
+  } catch (err) {
+    setStatus("Detection failed: " + err.message);
+  }
+}
+
+// -----------------------------------------------------------------
+// 3. EDITABLE CART UI — donor adjusts quantity or removes wrong detections
+// -----------------------------------------------------------------
+function renderCart() {
+  cartList.innerHTML = "";
+  currentCart.forEach((item, index) => {
+    const row = document.createElement("div");
+    row.className = "cart-item" + (item.needs_review ? " needs-review" : "");
+    const confText = item.confidence == null
+      ? "Manually added"
+      : `${(item.confidence * 100).toFixed(0)}% confident`;
+    row.innerHTML = `
+      <div class="name">${item.class_name}
+        <div class="conf">${confText}
+          ${item.needs_review ? '<span class="review-tag">— please check</span>' : ""}
+        </div>
+      </div>
+      <input type="number" min="0" value="${item.quantity}" data-index="${index}">
+      <button data-index="${index}">Remove</button>
+    `;
+    cartList.appendChild(row);
+  });
+
+  // Quantity edits
+  cartList.querySelectorAll("input[type=number]").forEach(input => {
+    input.addEventListener("change", (e) => {
+      const idx = parseInt(e.target.dataset.index);
+      currentCart[idx].quantity = Math.max(0, parseInt(e.target.value) || 0);
+    });
+  });
+
+  // Remove button
+  cartList.querySelectorAll("button[data-index]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      const idx = parseInt(e.target.dataset.index);
+      currentCart.splice(idx, 1);
+      renderCart();
+    });
+  });
+}
+
+// -----------------------------------------------------------------
+// 3b. MANUAL ADD — for anything the model missed or got wrong.
+//     Merges into an existing cart row of the same class instead of
+//     creating a duplicate, if one's already there.
+// -----------------------------------------------------------------
+manualAddBtn.addEventListener("click", () => {
+  const className = manualCategory.value;
+  const qty = Math.max(1, parseInt(manualQty.value) || 1);
+
+  const existing = currentCart.find(item => item.class_name === className);
+  if (existing) {
+    existing.quantity += qty;
+  } else {
+    currentCart.push({
+      class_name: className,
+      quantity: qty,
+      confidence: null,      // manually entered — no model confidence
+      needs_review: false,
+    });
+  }
+
+  renderCart();
+  setStatus("");
+  manualQty.value = 1;
+});
+
+// -----------------------------------------------------------------
+// 4. RETAKE / UPLOAD AGAIN / SUBMIT
+// -----------------------------------------------------------------
+retakeBtn.addEventListener("click", () => {
+  cartView.classList.remove("active");
+  cameraView.classList.add("active");
+  setStatus("");
+  startCamera();
+});
+
+submitBtn.addEventListener("click", async () => {
+  const donorName = donorNameInput.value.trim();
+  if (!donorName) {
+    setStatus("Please enter your name before submitting.");
+    donorNameInput.focus();
+    return;
+  }
+  if (currentCart.length === 0) {
+    setStatus("Your cart is empty — nothing to submit.");
+    return;
+  }
+
+  setStatus("Submitting...");
+  try {
+    const res = await fetch(`${API_BASE}/submissions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ donor_name: donorName, items: currentCart }),
+    });
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    const data = await res.json();
+    setStatus(`Submitted! Thank you, ${donorName}. (ID: ${data.submission_id})`);
+  } catch (err) {
+    setStatus("Submit failed: " + err.message);
+  }
+});
+
+startCamera();
+</script>
+</body>
+</html>

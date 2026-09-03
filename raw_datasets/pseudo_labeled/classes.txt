@@ -1,0 +1,6 @@
+clothing
+food
+books
+electronics
+furniture
+utensils
