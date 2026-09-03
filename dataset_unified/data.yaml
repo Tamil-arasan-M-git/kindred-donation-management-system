@@ -1,0 +1,6 @@
+path: C:\Users\Administrator\Downloads\donation_backend_final\dataset_unified
+train: images/train
+val: images/val
+test: images/test
+nc: 6
+names: ['clothing', 'food', 'books', 'electronics', 'furniture', 'utensils']

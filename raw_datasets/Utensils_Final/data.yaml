@@ -1,0 +1,11 @@
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 5
+names: ['bottle', 'bowl', 'cup', 'fork', 'spoon']
+
+source:
+  dataset: 'Household Computer Vision Dataset, Roboflow, version 1'
+  url: 'https://universe.roboflow.com/yolov5-epx0y/household-uhdlf/dataset/1'
+  license: 'CC BY 4.0'

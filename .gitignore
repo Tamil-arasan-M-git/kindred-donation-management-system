@@ -1,5 +1,6 @@
 venv/
 __pycache__/
+<<<<<<< HEAD
 *.py[cod]
 
 raw_datasets/
@@ -12,3 +13,8 @@ weights/
 *.db
 *.sqlite
 *.sqlite3
+=======
+*.pyc
+runs/
+weights/clip/ViT-B-32.pt
+>>>>>>> upload-temp
