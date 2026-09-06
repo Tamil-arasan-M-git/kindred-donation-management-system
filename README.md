@@ -196,6 +196,103 @@ Once `/detect` returns sensible JSON, open `camera_capture_and_cart.html` direct
 in a browser (or serve it with any static file server) to test the full
 camera -> detect -> editable cart -> submit -> PostgreSQL flow end to end.
 
+## API endpoint reference
+
+The interactive API documentation is available at `/docs`, with the raw
+OpenAPI document at `/openapi.json` and ReDoc at `/redoc`.
+
+### Public and legacy endpoints
+
+These routes are preserved for the Milestone 1 frontend.
+
+| Method | Endpoint                       | What it does                                                                                                                                 | Access             |
+| ------ | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `GET`  | `/`                            | Confirms that the Donation Platform API is running.                                                                                          | Public             |
+| `GET`  | `/health`                      | Returns backend health and the active AI model name.                                                                                         | Public             |
+| `POST` | `/detect`                      | Accepts an image, runs YOLO/YOLO-World detection, maps objects to the six donation categories, and returns quantities and confidence values. | Public             |
+| `POST` | `/submissions`                 | Saves the reviewed cart from the existing camera frontend as a donation submission.                                                          | Public legacy flow |
+| `GET`  | `/submissions`                 | Lists saved legacy submissions for the database view.                                                                                        | Public legacy flow |
+| `GET`  | `/submissions/{submission_id}` | Returns one legacy submission and its item lines.                                                                                            | Public legacy flow |
+
+### Authentication
+
+Send the returned token on protected requests as
+`Authorization: Bearer <access_token>`.
+
+| Method | Endpoint             | What it does                                                                                                                          | Access        |
+| ------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `POST` | `/api/auth/register` | Creates a donor, NGO, or admin account and securely hashes the password. Donor and NGO accounts are linked to their ownership record. | Public        |
+| `POST` | `/api/auth/login`    | Checks credentials and returns a JWT access token plus basic user information.                                                        | Public        |
+| `GET`  | `/api/auth/me`       | Returns the currently authenticated user's ID, email, role, and active status.                                                        | Authenticated |
+
+### NGO management
+
+| Method   | Endpoint                          | What it does                                                                                             | Access             |
+| -------- | --------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------ |
+| `POST`   | `/api/ngos`                       | Creates an NGO, validates contact details and coordinates, and starts it as unverified.                  | Admin              |
+| `GET`    | `/api/ngos`                       | Lists NGOs with optional `city`, `verified`, `limit`, and `offset` filters.                              | Public             |
+| `GET`    | `/api/ngos/{ngo_id}`              | Returns public information for one NGO.                                                                  | Public             |
+| `PUT`    | `/api/ngos/{ngo_id}`              | Updates an NGO's profile and location information.                                                       | NGO owner or admin |
+| `PATCH`  | `/api/ngos/{ngo_id}/verification` | Approves or removes an NGO's verified status.                                                            | Admin              |
+| `DELETE` | `/api/ngos/{ngo_id}`              | Deactivates an NGO by un-verifying it and disabling its NGO users without deleting historical donations. | Admin              |
+
+### NGO demand registry
+
+Supported categories are `clothing`, `food`, `books`, `electronics`,
+`furniture`, and `utensils`. Demand priority is from 1 to 5.
+
+| Method   | Endpoint                     | What it does                                                                                                                                  | Access             |
+| -------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `POST`   | `/api/ngos/{ngo_id}/demands` | Creates an NGO demand with category, quantity, priority, and optional expiry date.                                                            | NGO owner or admin |
+| `GET`    | `/api/ngos/{ngo_id}/demands` | Lists demands with optional `active_only`, `class_name`, and `priority` filters. Active demands have quantity above zero and are not expired. | NGO owner or admin |
+| `GET`    | `/api/demands/{demand_id}`   | Returns one demand after checking NGO ownership.                                                                                              | NGO owner or admin |
+| `PUT`    | `/api/demands/{demand_id}`   | Updates a demand's category, quantity, priority, or expiry date.                                                                              | NGO owner or admin |
+| `DELETE` | `/api/demands/{demand_id}`   | Deletes a demand.                                                                                                                             | NGO owner or admin |
+
+### Donation management
+
+| Method | Endpoint                              | What it does                                                                                                                                                      | Access                                     |
+| ------ | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `POST` | `/api/donations`                      | Creates a submitted donation for the authenticated donor and stores each item, quantity, and AI confidence.                                                       | Donor                                      |
+| `GET`  | `/api/donations`                      | Lists donations. Donors see only their own donations; NGO users see donations matched to their NGO; admins can see all. Supports `status`, `limit`, and `offset`. | Authenticated                              |
+| `GET`  | `/api/donations/{donation_id}`        | Returns one donation with ownership and item details.                                                                                                             | Owner, associated NGO, or admin            |
+| `PUT`  | `/api/donations/{donation_id}`        | Replaces item lines before matching and marks the new lines as donor-edited while retaining submitted confidence values.                                          | Donation owner while status is `submitted` |
+| `POST` | `/api/donations/{donation_id}/cancel` | Cancels a donation through the legal status-transition system.                                                                                                    | Donation owner, associated NGO, or admin   |
+
+The current API keeps image detection separate for frontend compatibility:
+call `POST /detect` first, let the donor review the result, then call
+`POST /api/donations` or the legacy `POST /submissions` route. A separate
+`/api/donations/from-image` endpoint is not currently implemented.
+
+### Donation status and audit history
+
+Allowed transitions are `submitted -> matched -> packaging_notified ->
+pickup_scheduled -> collected -> delivered -> acknowledged`. A donation can
+be cancelled before collection. Every status change records the previous
+status, new status, authenticated user, timestamp, and optional notes.
+
+| Method  | Endpoint                                      | What it does                                                                          | Access                                   |
+| ------- | --------------------------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `PATCH` | `/api/donations/{donation_id}/status`         | Validates and applies a legal status transition, then writes a status-history record. | Donation owner, associated NGO, or admin |
+| `GET`   | `/api/donations/{donation_id}/status-history` | Returns the donation's chronological status changes and notes.                        | Donation owner, associated NGO, or admin |
+
+### Matching
+
+Matching considers verified NGOs with active demands. It calculates exact
+category match, quantity fit, geographic proximity using the Haversine
+formula when coordinates exist, and NGO demand priority. Results are ranked
+and the score components are returned for transparency. Semantic/vector
+similarity is not claimed or used unless a future embedding service is added.
+
+| Method | Endpoint                               | What it does                                                                                                                  | Access                                   |
+| ------ | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `POST` | `/api/donations/{donation_id}/match`   | Finds active compatible NGO demands, calculates explainable scores, stores recommended matches, and returns them ranked.      | Donation owner or admin                  |
+| `GET`  | `/api/donations/{donation_id}/matches` | Lists stored matches for a donation, sorted by score with score components and explanations.                                  | Donation owner, associated NGO, or admin |
+| `GET`  | `/api/matches/{match_id}`              | Returns one match with its NGO, donation reference, score breakdown, and rejection reason if present.                         | Donation owner, matched NGO, or admin    |
+| `POST` | `/api/matches/{match_id}/accept`       | Accepts a candidate, rejects competing candidates, associates the donation with the NGO, and moves the donation to `matched`. | Donation owner, matched NGO, or admin    |
+| `POST` | `/api/matches/{match_id}/reject`       | Rejects a match and preserves an optional rejection reason.                                                                   | Donation owner, matched NGO, or admin    |
+| `GET`  | `/api/ngos/{ngo_id}/matches`           | Lists incoming matches for an NGO with optional `status`, `limit`, and `offset` filters.                                      | NGO owner or admin                       |
+
 ## Notes
 
 - Clothing has no pretrained-model shortcut — COCO has no clothing classes,
