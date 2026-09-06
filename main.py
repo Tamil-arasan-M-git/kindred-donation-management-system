@@ -1,3 +1,4 @@
+
 import io
 import uuid
 from collections import defaultdict
@@ -26,6 +27,8 @@ from db import (
     ItemSubmission,
     ItemSubmissionLine
 )
+from api_v2 import router as milestone2_router
+from config import CORS_ALLOWED_ORIGINS, CUSTOM_MODEL_PATH, USE_CUSTOM_MODEL
 
 
 # ============================================================
@@ -36,6 +39,7 @@ app = FastAPI(
     title="Donation Platform API",
     version="1.0.0"
 )
+app.include_router(milestone2_router)
 
 
 # ============================================================
@@ -44,7 +48,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
@@ -68,9 +72,6 @@ app.add_middleware(
 #      (e.g. "runs/detect/donation_items_yolov8n/weights/best.pt").
 #   3. That's it — nothing else in this file needs to change.
 # ============================================================
-
-USE_CUSTOM_MODEL = False
-CUSTOM_MODEL_PATH = "runs/detect/donation_items_yolov8n/weights/best.pt"
 
 DETECTION_CLASSES = [
     "book",

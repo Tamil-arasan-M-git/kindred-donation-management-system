@@ -17,20 +17,17 @@ Setup:
        (Windows PowerShell: $env:DATABASE_URL = "postgresql://...")
 """
 
-import os
 import uuid
 
 from sqlalchemy import (
     create_engine, Column, String, Integer, Boolean, DateTime, ForeignKey,
-    Numeric, SmallInteger, Date, CheckConstraint,
+    Numeric, SmallInteger, Date, CheckConstraint, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.sql import func
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/donation_platform"
-)
+from config import DATABASE_URL
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -49,6 +46,7 @@ class NGO(Base):
     longitude = Column(Numeric)
     verified = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    demands = relationship("DemandRecord", back_populates="ngo")
 
 
 class Donor(Base):
@@ -61,6 +59,23 @@ class Donor(Base):
     latitude = Column(Numeric)
     longitude = Column(Numeric)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    submissions = relationship("ItemSubmission", back_populates="donor")
+
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(20), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    ngo_id = Column(UUID(as_uuid=True), ForeignKey("ngos.id", ondelete="SET NULL"))
+    donor_id = Column(UUID(as_uuid=True), ForeignKey("donors.id", ondelete="SET NULL"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    __table_args__ = (CheckConstraint("role IN ('donor', 'ngo', 'admin')", name="user_role_valid"),)
+    ngo = relationship("NGO")
+    donor = relationship("Donor")
 
 
 class ItemSubmission(Base):
@@ -72,8 +87,12 @@ class ItemSubmission(Base):
     pickup_scheduled_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now())
+    __table_args__ = (CheckConstraint("status IN ('submitted', 'matched', 'packaging_notified', 'pickup_scheduled', 'collected', 'delivered', 'acknowledged', 'cancelled')", name="submission_status_valid"),)
 
     lines = relationship("ItemSubmissionLine", back_populates="submission", cascade="all, delete-orphan")
+    donor = relationship("Donor", back_populates="submissions")
+    status_history = relationship("StatusHistory", back_populates="submission", cascade="all, delete-orphan")
+    matches = relationship("DonationMatch", back_populates="submission", cascade="all, delete-orphan")
 
 
 class ItemSubmissionLine(Base):
@@ -85,7 +104,7 @@ class ItemSubmissionLine(Base):
     detection_confidence = Column(Numeric(4, 3))
     was_edited_by_donor = Column(Boolean, nullable=False, default=False)
 
-    __table_args__ = (CheckConstraint("quantity >= 0", name="quantity_non_negative"),)
+    __table_args__ = (CheckConstraint("quantity >= 0", name="quantity_non_negative"), CheckConstraint("class_name IN ('clothing', 'food', 'books', 'electronics', 'furniture', 'utensils')", name="submission_category_valid"))
     submission = relationship("ItemSubmission", back_populates="lines")
 
 
@@ -99,7 +118,40 @@ class DemandRecord(Base):
     expiry_date = Column(Date)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    __table_args__ = (CheckConstraint("quantity_needed >= 0", name="quantity_needed_non_negative"),)
+    __table_args__ = (CheckConstraint("quantity_needed >= 0", name="quantity_needed_non_negative"), CheckConstraint("priority BETWEEN 1 AND 5", name="demand_priority_valid"), CheckConstraint("class_name IN ('clothing', 'food', 'books', 'electronics', 'furniture', 'utensils')", name="demand_category_valid"))
+    ngo = relationship("NGO", back_populates="demands")
+
+
+class StatusHistory(Base):
+    __tablename__ = "status_history"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    submission_id = Column(UUID(as_uuid=True), ForeignKey("item_submissions.id", ondelete="CASCADE"), nullable=False)
+    old_status = Column(String(30))
+    new_status = Column(String(30), nullable=False)
+    changed_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    changed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    notes = Column(String(1000))
+    submission = relationship("ItemSubmission", back_populates="status_history")
+
+
+class DonationMatch(Base):
+    __tablename__ = "donation_matches"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    submission_id = Column(UUID(as_uuid=True), ForeignKey("item_submissions.id", ondelete="CASCADE"), nullable=False)
+    ngo_id = Column(UUID(as_uuid=True), ForeignKey("ngos.id", ondelete="CASCADE"), nullable=False)
+    score = Column(Numeric(5, 4), nullable=False)
+    item_match_score = Column(Numeric(5, 4), nullable=False)
+    quantity_score = Column(Numeric(5, 4), nullable=False)
+    distance_score = Column(Numeric(5, 4), nullable=False)
+    priority_score = Column(Numeric(5, 4), nullable=False)
+    semantic_score = Column(Numeric(5, 4))
+    status = Column(String(20), nullable=False, default="candidate")
+    rejection_reason = Column(String(1000))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    __table_args__ = (UniqueConstraint("submission_id", "ngo_id", name="unique_submission_ngo_match"), CheckConstraint("status IN ('candidate', 'recommended', 'accepted', 'rejected', 'expired')", name="match_status_valid"))
+    submission = relationship("ItemSubmission", back_populates="matches")
+    ngo = relationship("NGO")
 
 
 def get_db():

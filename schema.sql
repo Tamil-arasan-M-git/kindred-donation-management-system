@@ -51,7 +51,7 @@ CREATE TABLE item_submissions (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     donor_id            UUID REFERENCES donors(id) ON DELETE SET NULL,
     ngo_id              UUID REFERENCES ngos(id) ON DELETE SET NULL,  -- tenant scope; set once matched
-    status              VARCHAR(30) NOT NULL DEFAULT 'submitted',
+    status              VARCHAR(30) NOT NULL DEFAULT 'submitted' CHECK (status IN ('submitted', 'matched', 'packaging_notified', 'pickup_scheduled', 'collected', 'delivered', 'acknowledged', 'cancelled')),
         -- expected values: submitted, matched, packaging_notified,
         -- pickup_scheduled, collected, delivered, acknowledged
     pickup_scheduled_at TIMESTAMPTZ,
@@ -65,7 +65,7 @@ CREATE TABLE item_submissions (
 CREATE TABLE item_submission_lines (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     submission_id       UUID NOT NULL REFERENCES item_submissions(id) ON DELETE CASCADE,
-    class_name          VARCHAR(50) NOT NULL,   -- one of: clothing, food, books, electronics, furniture, utensils
+    class_name          VARCHAR(50) NOT NULL CHECK (class_name IN ('clothing', 'food', 'books', 'electronics', 'furniture', 'utensils')),   -- one of: clothing, food, books, electronics, furniture, utensils
     quantity            INTEGER NOT NULL CHECK (quantity >= 0),
     detection_confidence NUMERIC(4,3),          -- e.g. 0.812; NULL if manually added by donor
     was_edited_by_donor BOOLEAN NOT NULL DEFAULT FALSE
@@ -80,7 +80,7 @@ CREATE TABLE demand_records (
     ngo_id          UUID NOT NULL REFERENCES ngos(id) ON DELETE CASCADE,  -- tenant scope
     class_name      VARCHAR(50) NOT NULL,
     quantity_needed INTEGER NOT NULL CHECK (quantity_needed >= 0),
-    priority        SMALLINT NOT NULL DEFAULT 1,  -- e.g. 1=low, 2=medium, 3=high
+    priority        SMALLINT NOT NULL DEFAULT 1 CHECK (priority BETWEEN 1 AND 5),
     expiry_date     DATE,                          -- demand no longer valid after this date
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -95,3 +95,47 @@ CREATE INDEX idx_submissions_status     ON item_submissions (status);
 CREATE INDEX idx_submission_lines_class ON item_submission_lines (class_name);
 CREATE INDEX idx_demand_ngo             ON demand_records (ngo_id);
 CREATE INDEX idx_demand_class           ON demand_records (class_name);
+
+-- Milestone 2 account, audit, and matching tables. These statements are
+-- additive so existing Milestone 1 data remains intact.
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL CHECK (role IN ('donor', 'ngo', 'admin')),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    ngo_id UUID REFERENCES ngos(id) ON DELETE SET NULL,
+    donor_id UUID REFERENCES donors(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE status_history (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    submission_id UUID NOT NULL REFERENCES item_submissions(id) ON DELETE CASCADE,
+    old_status VARCHAR(30),
+    new_status VARCHAR(30) NOT NULL,
+    changed_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    notes VARCHAR(1000)
+);
+
+CREATE TABLE donation_matches (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    submission_id UUID NOT NULL REFERENCES item_submissions(id) ON DELETE CASCADE,
+    ngo_id UUID NOT NULL REFERENCES ngos(id) ON DELETE CASCADE,
+    score NUMERIC(5,4) NOT NULL,
+    item_match_score NUMERIC(5,4) NOT NULL,
+    quantity_score NUMERIC(5,4) NOT NULL,
+    distance_score NUMERIC(5,4) NOT NULL,
+    priority_score NUMERIC(5,4) NOT NULL,
+    semantic_score NUMERIC(5,4),
+    status VARCHAR(20) NOT NULL DEFAULT 'candidate' CHECK (status IN ('candidate', 'recommended', 'accepted', 'rejected', 'expired')),
+    rejection_reason VARCHAR(1000),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (submission_id, ngo_id)
+);
+
+CREATE INDEX idx_status_history_submission ON status_history (submission_id, changed_at);
+CREATE INDEX idx_matches_submission ON donation_matches (submission_id, score DESC);
