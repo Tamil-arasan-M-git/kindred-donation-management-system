@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+
+venv/
+__pycache__/
+*.py[cod]
+*.cache
+
+# Local model files and generated training artifacts
+*.pt
+weights/
+runs/
