@@ -1,6 +1,7 @@
 
 import io
 import logging
+import time
 import uuid
 from collections import defaultdict
 
@@ -81,6 +82,24 @@ async def add_security_headers(request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     if request.url.scheme == "https":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    started_at = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        message = f"{request.method} {request.url.path} -> 500 ({elapsed_ms:.1f} ms)"
+        logger.exception(message)
+        print(message, flush=True)
+        raise
+    elapsed_ms = (time.perf_counter() - started_at) * 1000
+    message = f"{request.method} {request.url.path} -> {response.status_code} ({elapsed_ms:.1f} ms)"
+    logger.info(message)
+    print(message, flush=True)
     return response
 
 

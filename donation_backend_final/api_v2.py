@@ -1,19 +1,23 @@
 import logging
 import math
-from datetime import date
+from datetime import date, datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from db import DemandRecord, DonationMatch, Donor, ItemSubmission, ItemSubmissionLine, NGO, StatusHistory, User, get_db
-from schemas import DemandCreate, DemandResponse, DonationCreate, DonorResponse, NGOCreate, NGOResponse, NGOUpdate, LoginRequest, StatusUpdate, TokenResponse, UserRegister, UserResponse, VerificationRequest, CATEGORIES
+from db import DemandRecord, DonationMatch, Donor, ItemSubmission, ItemSubmissionLine, NGO, NGOStaff, Notification, OperationAssignment, StatusHistory, User, get_db
+from notification_service import EVENTS, notify_users
+from packaging_service import get_packaging_checklist
+from schemas import DemandCreate, DemandResponse, DonationCreate, DonorResponse, DonorUpdate, NGOCreate, NGOResponse, NGOUpdate, LoginRequest, OperationCreate, OperationUpdate, PickupScheduleRequest, StaffCreate, StaffResponse, StaffUpdate, StatusUpdate, TokenResponse, UserRegister, UserResponse, VerificationRequest, CATEGORIES
 from security import create_access_token, get_current_user, hash_password, require_roles, verify_password
+from status_service import STATUS_TRANSITIONS, validate_status_action, validate_transition
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["Milestone 2"])
-TRANSITIONS = {"submitted": {"matched", "cancelled"}, "matched": {"packaging_notified", "cancelled"}, "packaging_notified": {"pickup_scheduled", "cancelled"}, "pickup_scheduled": {"collected", "cancelled"}, "collected": {"delivered"}, "delivered": {"acknowledged"}, "acknowledged": set(), "cancelled": set()}
+TRANSITIONS = STATUS_TRANSITIONS
 
 
 def validate_pagination(limit: int, offset: int, max_limit: int = 100):
@@ -26,6 +30,8 @@ def validate_pagination(limit: int, offset: int, max_limit: int = 100):
     return limit, offset
 
 def require_owner(user: User, ngo_id: UUID | None = None, donor_id: UUID | None = None):
+    if user.role == "admin":
+        return
     if user.role == "ngo" and ngo_id and user.ngo_id == ngo_id:
         return
     if user.role == "donor" and donor_id and user.donor_id == donor_id:
@@ -55,26 +61,165 @@ def require_match_action_permission(user: User, match_ngo_id: UUID | None):
         raise HTTPException(status_code=403, detail="You cannot perform this action for another NGO")
 
 
-def donation_view(donation: ItemSubmission):
-    return {"id": str(donation.id), "donor_id": str(donation.donor_id) if donation.donor_id else None, "ngo_id": str(donation.ngo_id) if donation.ngo_id else None, "status": donation.status, "created_at": donation.created_at.isoformat() if donation.created_at else None, "items": [{"class_name": line.class_name, "quantity": line.quantity, "confidence": float(line.detection_confidence) if line.detection_confidence is not None else None, "was_edited_by_donor": line.was_edited_by_donor} for line in donation.lines]}
+def require_donor_profile(user: User):
+    if user.role != "donor":
+        raise HTTPException(status_code=403, detail="Donor access required")
+    if not user.donor_id:
+        raise HTTPException(status_code=403, detail="This donor account is not linked to a donor profile")
+
+
+def require_ngo_profile(user: User):
+    if user.role != "ngo" or not user.ngo_id:
+        raise HTTPException(status_code=403, detail="NGO access required")
+
+
+def require_operation_ngo_access(user: User, donation: ItemSubmission):
+    if not donation.ngo_id:
+        raise HTTPException(status_code=409, detail="Donation has not been assigned to an NGO")
+    if user.role == "admin":
+        return donation.ngo_id
+    if user.role == "ngo" and user.ngo_id == donation.ngo_id:
+        return donation.ngo_id
+    raise HTTPException(status_code=403, detail="Only the assigned NGO or admin can manage operations")
+
+
+def staff_view(staff: NGOStaff):
+    return {
+        "id": str(staff.id),
+        "ngo_id": str(staff.ngo_id),
+        "name": staff.name,
+        "phone": staff.phone,
+        "email": staff.email,
+        "role": staff.role,
+        "is_active": staff.is_active,
+        "created_at": staff.created_at.isoformat() if staff.created_at else None,
+        "updated_at": staff.updated_at.isoformat() if staff.updated_at else None,
+    }
+
+
+def operation_view(operation: OperationAssignment):
+    return {
+        "id": str(operation.id),
+        "donation_id": str(operation.donation_id),
+        "ngo_id": str(operation.ngo_id),
+        "staff": staff_view(operation.staff),
+        "task_type": operation.task_type,
+        "scheduled_at": operation.scheduled_at.isoformat() if operation.scheduled_at else None,
+        "status": operation.status,
+        "notes": operation.notes,
+        "created_at": operation.created_at.isoformat() if operation.created_at else None,
+        "updated_at": operation.updated_at.isoformat() if operation.updated_at else None,
+    }
+
+
+def validate_staff_for_task(db: Session, staff_id: UUID, ngo_id: UUID, task_type: str, require_active: bool = True):
+    staff = db.get(NGOStaff, staff_id)
+    if not staff:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+    if staff.ngo_id != ngo_id:
+        raise HTTPException(status_code=403, detail="Staff member belongs to another NGO")
+    if require_active and not staff.is_active:
+        raise HTTPException(status_code=409, detail="Inactive staff cannot receive new assignments")
+    if staff.role != task_type:
+        raise HTTPException(status_code=409, detail=f"Staff role {staff.role} cannot perform {task_type} operations")
+    return staff
+
+
+def validate_pickup_operation_schedule(donation: ItemSubmission, scheduled_at: datetime):
+    if donation.status != "pickup_scheduled" or not donation.pickup_scheduled_at:
+        raise HTTPException(status_code=409, detail="Pickup operations require a scheduled donation pickup")
+    if scheduled_at != donation.pickup_scheduled_at:
+        raise HTTPException(status_code=409, detail="Pickup assignment time must match the donation pickup time")
+
+
+def donation_view(donation: ItemSubmission, include_history: bool = False):
+    result = {
+        "id": str(donation.id),
+        "donor_id": str(donation.donor_id) if donation.donor_id else None,
+        "ngo_id": str(donation.ngo_id) if donation.ngo_id else None,
+        "ngo": {"id": str(donation.ngo.id), "name": donation.ngo.name} if donation.ngo else None,
+        "status": donation.status,
+        "pickup_scheduled_at": donation.pickup_scheduled_at.isoformat() if donation.pickup_scheduled_at else None,
+        "created_at": donation.created_at.isoformat() if donation.created_at else None,
+        "items": [{"class_name": line.class_name, "quantity": line.quantity, "confidence": float(line.detection_confidence) if line.detection_confidence is not None else None, "was_edited_by_donor": line.was_edited_by_donor} for line in donation.lines],
+        "matches": [{"id": str(match.id), "ngo_id": str(match.ngo_id), "ngo_name": match.ngo.name if match.ngo else None, "score": float(match.score), "status": match.status} for match in sorted(donation.matches, key=lambda item: item.score, reverse=True)],
+    }
+    if include_history:
+        result["status_history"] = [{"old_status": item.old_status, "new_status": item.new_status, "changed_at": item.changed_at.isoformat() if item.changed_at else None, "changed_by_user_id": str(item.changed_by_user_id) if item.changed_by_user_id else None, "notes": item.notes} for item in sorted(donation.status_history, key=lambda item: item.changed_at or datetime.min)]
+    return result
+
+
+def users_for_donation(db: Session, donation: ItemSubmission):
+    users = []
+    if donation.donor_id:
+        users.extend(db.query(User).filter(User.donor_id == donation.donor_id, User.is_active.is_(True)).all())
+    if donation.ngo_id:
+        users.extend(db.query(User).filter(User.ngo_id == donation.ngo_id, User.is_active.is_(True)).all())
+    return users
+
+
+def notify_donation_users(db: Session, donation: ItemSubmission, event_type: str, changed_user_id=None):
+    users = [user for user in users_for_donation(db, donation) if user.id != changed_user_id]
+    notify_users(db, users, event_type, donation_id=donation.id)
 
 @router.post("/auth/register", response_model=UserResponse, tags=["Authentication"])
 def register(request: UserRegister, db: Session = Depends(get_db)):
     if request.role == "admin":
         raise HTTPException(status_code=403, detail="Admin accounts cannot be created through the public registration endpoint")
-    if db.query(User).filter(User.email == request.email.lower()).first():
+    email = request.email.lower()
+    if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=409, detail="Email is already registered")
-    donor_id = None
-    ngo_id = None
-    if request.role == "donor":
-        donor = Donor(email=request.email.lower())
-        db.add(donor); db.flush(); donor_id = donor.id
-    elif request.role == "ngo":
-        ngo = NGO(name=request.email.split("@")[0], contact_email=request.email.lower())
-        db.add(ngo); db.flush(); ngo_id = ngo.id
-    user = User(email=request.email.lower(), password_hash=hash_password(request.password), role=request.role, donor_id=donor_id, ngo_id=ngo_id)
-    db.add(user); db.commit(); db.refresh(user)
-    return user
+    if db.query(Donor).filter(Donor.email == email).first() or db.query(NGO).filter(NGO.contact_email == email).first():
+        raise HTTPException(status_code=409, detail="Email is already registered")
+
+    try:
+        donor_id = None
+        ngo_id = None
+        if request.role == "donor":
+            donor = Donor(
+                name=request.name,
+                email=email,
+                phone=request.phone,
+                city=request.city,
+                latitude=request.latitude,
+                longitude=request.longitude,
+            )
+            db.add(donor)
+            db.flush()
+            donor_id = donor.id
+        else:
+            ngo = NGO(
+                name=request.organization_name,
+                contact_email=email,
+                contact_phone=request.contact_phone,
+                address=request.address,
+                city=request.city,
+                latitude=request.latitude,
+                longitude=request.longitude,
+                verified=False,
+            )
+            db.add(ngo)
+            db.flush()
+            ngo_id = ngo.id
+
+        user = User(
+            email=email,
+            password_hash=hash_password(request.password),
+            role=request.role,
+            donor_id=donor_id,
+            ngo_id=ngo_id,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return user
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        logger.exception("Registration failed for %s", email)
+        raise HTTPException(status_code=500, detail="Registration failed")
 
 @router.post("/auth/login", response_model=TokenResponse, tags=["Authentication"])
 def login(request: LoginRequest, db: Session = Depends(get_db)):
@@ -86,6 +231,34 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
 @router.get("/auth/me", response_model=UserResponse, tags=["Authentication"])
 def me(user: User = Depends(get_current_user)):
     return user
+
+
+@router.get("/donors/me", response_model=DonorResponse, tags=["Donor Profile"])
+def get_my_donor_profile(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_donor_profile(user)
+    donor = db.get(Donor, user.donor_id)
+    if not donor:
+        raise HTTPException(status_code=404, detail="Donor profile not found")
+    return donor
+
+
+@router.put("/donors/me", response_model=DonorResponse, tags=["Donor Profile"])
+def update_my_donor_profile(request: DonorUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_donor_profile(user)
+    donor = db.get(Donor, user.donor_id)
+    if not donor:
+        raise HTTPException(status_code=404, detail="Donor profile not found")
+    if donor.email and request.email.lower() != donor.email.lower():
+        raise HTTPException(status_code=400, detail="Profile email cannot be changed")
+
+    donor.name = request.name
+    donor.phone = request.phone
+    donor.city = request.city
+    donor.latitude = request.latitude
+    donor.longitude = request.longitude
+    db.commit()
+    db.refresh(donor)
+    return donor
 
 @router.post("/ngos", response_model=NGOResponse, tags=["NGOs"])
 def create_ngo(request: NGOCreate, db: Session = Depends(get_db), user: User = Depends(require_roles("admin"))):
@@ -167,6 +340,170 @@ def deactivate_ngo(ngo_id: UUID, db: Session = Depends(get_db), user: User = Dep
     db.query(User).filter(User.ngo_id == ngo_id).update({User.is_active: False})
     db.commit()
 
+
+@router.get("/ngos/me/staff", response_model=list[StaffResponse], tags=["NGO Staff"])
+def list_my_staff(limit: int = 50, offset: int = 0, active_only: bool = False, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_ngo_profile(user)
+    limit, offset = validate_pagination(limit, offset)
+    query = db.query(NGOStaff).filter(NGOStaff.ngo_id == user.ngo_id)
+    if active_only:
+        query = query.filter(NGOStaff.is_active.is_(True))
+    return query.order_by(NGOStaff.created_at.desc(), NGOStaff.id.desc()).offset(offset).limit(limit).all()
+
+
+@router.post("/ngos/me/staff", response_model=StaffResponse, tags=["NGO Staff"])
+def create_staff(request: StaffCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_ngo_profile(user)
+    if db.query(NGOStaff).filter(NGOStaff.ngo_id == user.ngo_id, NGOStaff.email == request.email.lower()).first():
+        raise HTTPException(status_code=409, detail="A staff member with this email already exists in the NGO")
+    staff = NGOStaff(ngo_id=user.ngo_id, **request.model_dump())
+    staff.email = staff.email.lower()
+    db.add(staff)
+    db.commit()
+    db.refresh(staff)
+    return staff
+
+
+@router.put("/ngos/me/staff/{staff_id}", response_model=StaffResponse, tags=["NGO Staff"])
+def update_staff(staff_id: UUID, request: StaffUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_ngo_profile(user)
+    staff = db.get(NGOStaff, staff_id)
+    if not staff or staff.ngo_id != user.ngo_id:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+    duplicate = db.query(NGOStaff).filter(NGOStaff.ngo_id == user.ngo_id, NGOStaff.email == request.email.lower(), NGOStaff.id != staff.id).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="A staff member with this email already exists in the NGO")
+    for key, value in request.model_dump().items():
+        setattr(staff, key, value.lower() if key == "email" else value)
+    db.commit()
+    db.refresh(staff)
+    return staff
+
+
+@router.delete("/ngos/me/staff/{staff_id}", status_code=204, tags=["NGO Staff"])
+def deactivate_staff(staff_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_ngo_profile(user)
+    staff = db.get(NGOStaff, staff_id)
+    if not staff or staff.ngo_id != user.ngo_id:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+    staff.is_active = False
+    db.commit()
+
+
+OPERATION_STATUS_TRANSITIONS = {
+    "scheduled": {"in_progress", "completed", "cancelled"},
+    "in_progress": {"completed", "cancelled"},
+    "completed": set(),
+    "cancelled": set(),
+}
+
+
+def validate_operation_status(current: str, requested: str):
+    if requested not in OPERATION_STATUS_TRANSITIONS.get(current, set()):
+        raise HTTPException(status_code=409, detail=f"Operation cannot transition from {current} to {requested}")
+
+
+def notify_operation_event(db: Session, donation: ItemSubmission, task_type: str, status: str, user_id=None):
+    event_type = {
+        ("packaging", "scheduled"): "PACKAGING_SCHEDULED",
+        ("pickup", "scheduled"): "PICKUP_SCHEDULED",
+        ("delivery", "scheduled"): "DELIVERY_SCHEDULED",
+        ("pickup", "completed"): "PICKUP_COMPLETED",
+        ("delivery", "completed"): "DELIVERY_COMPLETED",
+    }.get((task_type, status))
+    if event_type:
+        notify_donation_users(db, donation, event_type, changed_user_id=user_id)
+
+
+@router.get("/ngos/me/operations", tags=["Operations"])
+def list_my_operations(task_type: str | None = None, status: str | None = None, limit: int = 50, offset: int = 0, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_ngo_profile(user)
+    limit, offset = validate_pagination(limit, offset)
+    query = db.query(OperationAssignment).filter(OperationAssignment.ngo_id == user.ngo_id)
+    if task_type:
+        if task_type not in {"packaging", "pickup", "delivery"}:
+            raise HTTPException(status_code=400, detail="Unsupported task type")
+        query = query.filter(OperationAssignment.task_type == task_type)
+    if status:
+        if status not in OPERATION_STATUS_TRANSITIONS and status not in {"scheduled", "in_progress", "completed", "cancelled"}:
+            raise HTTPException(status_code=400, detail="Unsupported operation status")
+        query = query.filter(OperationAssignment.status == status)
+    operations = query.order_by(OperationAssignment.scheduled_at.asc(), OperationAssignment.id.asc()).offset(offset).limit(limit).all()
+    return [operation_view(operation) for operation in operations]
+
+
+@router.get("/ngos/me/operations/today", tags=["Operations"])
+def list_my_operations_today(limit: int = 100, offset: int = 0, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_ngo_profile(user)
+    limit, offset = validate_pagination(limit, offset)
+    query = db.query(OperationAssignment).filter(OperationAssignment.ngo_id == user.ngo_id, func.date(OperationAssignment.scheduled_at) == date.today())
+    operations = query.order_by(OperationAssignment.scheduled_at.asc(), OperationAssignment.id.asc()).offset(offset).limit(limit).all()
+    return [operation_view(operation) for operation in operations]
+
+
+@router.post("/donations/{donation_id}/operations", tags=["Operations"])
+def create_operation(donation_id: UUID, request: OperationCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    donation = db.get(ItemSubmission, donation_id)
+    if not donation:
+        raise HTTPException(status_code=404, detail="Donation not found")
+    ngo_id = require_operation_ngo_access(user, donation)
+    staff = validate_staff_for_task(db, request.staff_id, ngo_id, request.task_type)
+    if request.task_type == "packaging" and donation.status not in {"matched", "packaging_notified"}:
+        raise HTTPException(status_code=409, detail="Packaging operations require a matched donation")
+    if request.task_type == "pickup":
+        validate_pickup_operation_schedule(donation, request.scheduled_at)
+    if request.task_type == "delivery" and donation.status not in {"collected", "delivered"}:
+        raise HTTPException(status_code=409, detail="Delivery operations require a collected donation")
+    overlap = db.query(OperationAssignment).filter(OperationAssignment.staff_id == staff.id, OperationAssignment.scheduled_at == request.scheduled_at, OperationAssignment.status.in_(["scheduled", "in_progress"])).first()
+    if overlap:
+        raise HTTPException(status_code=409, detail="Staff member already has an active assignment at this time")
+    operation_data = request.model_dump()
+    operation_data.pop("staff_id", None)
+    operation = OperationAssignment(donation_id=donation.id, ngo_id=ngo_id, staff_id=staff.id, **operation_data)
+    db.add(operation)
+    db.commit()
+    db.refresh(operation)
+    notify_operation_event(db, donation, operation.task_type, operation.status, user.id)
+    return operation_view(operation)
+
+
+@router.get("/donations/{donation_id}/operations", tags=["Operations"])
+def list_donation_operations(donation_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    donation = db.get(ItemSubmission, donation_id)
+    if not donation:
+        raise HTTPException(status_code=404, detail="Donation not found")
+    require_donation_access(user, donation)
+    return [operation_view(operation) for operation in sorted(donation.operations, key=lambda item: item.scheduled_at)]
+
+
+@router.put("/donations/{donation_id}/operations/{assignment_id}", tags=["Operations"])
+def update_operation(donation_id: UUID, assignment_id: UUID, request: OperationUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    donation = db.get(ItemSubmission, donation_id)
+    if not donation:
+        raise HTTPException(status_code=404, detail="Donation not found")
+    ngo_id = require_operation_ngo_access(user, donation)
+    operation = db.get(OperationAssignment, assignment_id)
+    if not operation or operation.donation_id != donation.id or operation.ngo_id != ngo_id:
+        raise HTTPException(status_code=404, detail="Operation assignment not found")
+    values = request.model_dump(exclude_unset=True)
+    task_type = values.get("task_type", operation.task_type)
+    staff_id = values.get("staff_id", operation.staff_id)
+    staff = validate_staff_for_task(db, staff_id, ngo_id, task_type, require_active="staff_id" in values)
+    scheduled_at = values.get("scheduled_at", operation.scheduled_at)
+    if task_type == "pickup":
+        validate_pickup_operation_schedule(donation, scheduled_at)
+    if "status" in values:
+        validate_operation_status(operation.status, values["status"])
+    overlap = db.query(OperationAssignment).filter(OperationAssignment.staff_id == staff.id, OperationAssignment.scheduled_at == scheduled_at, OperationAssignment.status.in_(["scheduled", "in_progress"]), OperationAssignment.id != operation.id).first()
+    if overlap:
+        raise HTTPException(status_code=409, detail="Staff member already has an active assignment at this time")
+    for key, value in values.items():
+        setattr(operation, key, value)
+    db.commit()
+    db.refresh(operation)
+    notify_operation_event(db, donation, operation.task_type, operation.status, user.id)
+    return operation_view(operation)
+
 @router.post("/donations", tags=["Donations"])
 def create_donation(request: DonationCreate, db: Session = Depends(get_db), user: User = Depends(require_roles("donor"))):
     if not user.donor_id:
@@ -188,7 +525,7 @@ def list_donations(status: str | None = None, limit: int = 50, offset: int = 0, 
 def get_donation(donation_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     donation = db.get(ItemSubmission, donation_id)
     if not donation: raise HTTPException(status_code=404, detail="Donation not found")
-    require_owner(user, ngo_id=donation.ngo_id, donor_id=donation.donor_id); return donation_view(donation)
+    require_owner(user, ngo_id=donation.ngo_id, donor_id=donation.donor_id); return donation_view(donation, include_history=True)
 
 @router.put("/donations/{donation_id}", tags=["Donations"])
 def update_donation(donation_id: UUID, request: DonationCreate, db: Session = Depends(get_db), user: User = Depends(require_roles("donor"))):
@@ -212,17 +549,183 @@ def update_status(donation_id: UUID, request: StatusUpdate, db: Session = Depend
 def change_status(donation_id: UUID, request: StatusUpdate, db: Session, user: User):
     donation = db.get(ItemSubmission, donation_id)
     if not donation: raise HTTPException(status_code=404, detail="Donation not found")
-    require_owner(user, ngo_id=donation.ngo_id, donor_id=donation.donor_id)
-    if request.status not in TRANSITIONS.get(donation.status, set()): raise HTTPException(status_code=409, detail=f"Donation cannot transition from {donation.status} to {request.status}")
+    if user.role == "donor":
+        require_owner(user, donor_id=donation.donor_id)
+    else:
+        require_owner(user, ngo_id=donation.ngo_id, donor_id=donation.donor_id)
+    validate_status_action(user.role, donation.status, request.status)
+    validate_transition(donation.status, request.status)
     old_status = donation.status; donation.status = request.status
-    db.add(StatusHistory(submission_id=donation.id, old_status=old_status, new_status=request.status, changed_by_user_id=user.id, notes=request.notes)); db.commit(); db.refresh(donation); return donation_view(donation)
+    db.add(StatusHistory(submission_id=donation.id, old_status=old_status, new_status=request.status, changed_by_user_id=user.id, notes=request.notes)); db.commit(); db.refresh(donation)
+    event_type = {
+        "packaging_notified": "PACKAGING_REQUIRED",
+        "collected": "DONATION_COLLECTED",
+        "delivered": "DONATION_DELIVERED",
+        "acknowledged": "DONATION_ACKNOWLEDGED",
+    }.get(request.status)
+    if event_type:
+        notify_donation_users(db, donation, event_type, changed_user_id=user.id)
+    return donation_view(donation, include_history=True)
 
 @router.get("/donations/{donation_id}/status-history", tags=["Donation Status"])
 def status_history(donation_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     donation = db.get(ItemSubmission, donation_id)
     if not donation: raise HTTPException(status_code=404, detail="Donation not found")
     require_owner(user, ngo_id=donation.ngo_id, donor_id=donation.donor_id)
-    return {"history": [{"old_status": item.old_status, "new_status": item.new_status, "changed_at": item.changed_at.isoformat() if item.changed_at else None, "notes": item.notes} for item in sorted(donation.status_history, key=lambda item: item.changed_at or date.min)]}
+    return {"history": [{"old_status": item.old_status, "new_status": item.new_status, "changed_at": item.changed_at.isoformat() if item.changed_at else None, "notes": item.notes} for item in sorted(donation.status_history, key=lambda item: item.changed_at or datetime.min.replace(tzinfo=timezone.utc))]}
+
+
+def require_donation_access(user: User, donation: ItemSubmission):
+    require_owner(user, ngo_id=donation.ngo_id, donor_id=donation.donor_id)
+
+
+def pickup_view(donation: ItemSubmission):
+    return {
+        "donation_id": str(donation.id),
+        "status": donation.status,
+        "pickup_scheduled_at": donation.pickup_scheduled_at.isoformat() if donation.pickup_scheduled_at else None,
+        "ngo": {"id": str(donation.ngo.id), "name": donation.ngo.name} if donation.ngo else None,
+    }
+
+
+@router.post("/donations/{donation_id}/packaging-notify", tags=["Packaging"])
+def notify_packaging(donation_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    donation = db.get(ItemSubmission, donation_id)
+    if not donation:
+        raise HTTPException(status_code=404, detail="Donation not found")
+    if user.role == "ngo":
+        require_owner(user, ngo_id=donation.ngo_id)
+    elif user.role == "admin":
+        pass
+    else:
+        raise HTTPException(status_code=403, detail="Only the assigned NGO or admin can notify packaging")
+    result = change_status(donation_id, StatusUpdate(status="packaging_notified"), db, user)
+    return result
+
+
+@router.get("/donations/{donation_id}/packaging-checklist", tags=["Packaging"])
+def packaging_checklist(donation_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    donation = db.get(ItemSubmission, donation_id)
+    if not donation:
+        raise HTTPException(status_code=404, detail="Donation not found")
+    require_donation_access(user, donation)
+    return {"donation_id": str(donation.id), **get_packaging_checklist(donation.lines)}
+
+
+def save_pickup_schedule(donation: ItemSubmission, scheduled_at: datetime, db: Session, user: User, reschedule: bool = False):
+    if reschedule:
+        if donation.status != "pickup_scheduled":
+            raise HTTPException(status_code=409, detail="Only scheduled pickups can be rescheduled")
+        note = "Pickup rescheduled"
+    else:
+        validate_transition(donation.status, "pickup_scheduled")
+        note = "Pickup scheduled"
+    donation.pickup_scheduled_at = scheduled_at
+    if not reschedule:
+        old_status = donation.status
+        donation.status = "pickup_scheduled"
+        db.add(StatusHistory(submission_id=donation.id, old_status=old_status, new_status="pickup_scheduled", changed_by_user_id=user.id, notes=note))
+    else:
+        db.add(StatusHistory(submission_id=donation.id, old_status="pickup_scheduled", new_status="pickup_scheduled", changed_by_user_id=user.id, notes=note))
+    db.commit()
+    db.refresh(donation)
+    notify_donation_users(db, donation, "PICKUP_SCHEDULED", changed_user_id=user.id)
+    return pickup_view(donation)
+
+
+@router.get("/donations/{donation_id}/pickup", tags=["Pickup"])
+def get_pickup(donation_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    donation = db.get(ItemSubmission, donation_id)
+    if not donation:
+        raise HTTPException(status_code=404, detail="Donation not found")
+    require_donation_access(user, donation)
+    return pickup_view(donation)
+
+
+@router.post("/donations/{donation_id}/pickup/schedule", tags=["Pickup"])
+def schedule_pickup(donation_id: UUID, request: PickupScheduleRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    donation = db.get(ItemSubmission, donation_id)
+    if not donation:
+        raise HTTPException(status_code=404, detail="Donation not found")
+    require_donation_access(user, donation)
+    if user.role not in {"donor", "ngo", "admin"}:
+        raise HTTPException(status_code=403, detail="Pickup scheduling is not available for this role")
+    return save_pickup_schedule(donation, request.scheduled_at, db, user)
+
+
+@router.put("/donations/{donation_id}/pickup", tags=["Pickup"])
+@router.post("/donations/{donation_id}/pickup/reschedule", tags=["Pickup"], deprecated=True)
+def reschedule_pickup(donation_id: UUID, request: PickupScheduleRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    donation = db.get(ItemSubmission, donation_id)
+    if not donation:
+        raise HTTPException(status_code=404, detail="Donation not found")
+    require_donation_access(user, donation)
+    return save_pickup_schedule(donation, request.scheduled_at, db, user, reschedule=True)
+
+
+@router.get("/notifications", tags=["Notifications"])
+def list_notifications(unread_only: bool = False, limit: int = 50, offset: int = 0, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    limit, offset = validate_pagination(limit, offset)
+    query = db.query(Notification).filter(Notification.user_id == user.id)
+    if unread_only:
+        query = query.filter(Notification.is_read.is_(False))
+    notifications = query.order_by(Notification.created_at.desc(), Notification.id.desc()).offset(offset).limit(limit).all()
+    return [{"id": str(item.id), "donation_id": str(item.donation_id) if item.donation_id else None, "type": item.type, "title": item.title, "message": item.message, "channel": item.channel, "is_read": item.is_read, "delivery_status": item.delivery_status, "created_at": item.created_at.isoformat() if item.created_at else None, "sent_at": item.sent_at.isoformat() if item.sent_at else None} for item in notifications]
+
+
+@router.patch("/notifications/{notification_id}/read", tags=["Notifications"])
+def mark_notification_read(notification_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    notification = db.query(Notification).filter(Notification.id == notification_id, Notification.user_id == user.id).first()
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    notification.is_read = True
+    db.commit()
+    return {"id": str(notification.id), "is_read": notification.is_read}
+
+
+@router.patch("/notifications/read-all", tags=["Notifications"])
+def mark_all_notifications_read(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    updated = db.query(Notification).filter(Notification.user_id == user.id, Notification.is_read.is_(False)).update({Notification.is_read: True}, synchronize_session=False)
+    db.commit()
+    return {"updated": updated}
+
+
+def recent_activity(query, limit: int = 10):
+    return [{"donation_id": str(item.submission_id), "old_status": item.old_status, "new_status": item.new_status, "changed_at": item.changed_at.isoformat() if item.changed_at else None, "notes": item.notes} for item in query.order_by(StatusHistory.changed_at.desc(), StatusHistory.id.desc()).limit(limit).all()]
+
+
+@router.get("/donors/me/dashboard", tags=["Dashboards"])
+def donor_dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_donor_profile(user)
+    donor_id = user.donor_id
+    donations = db.query(ItemSubmission).filter(ItemSubmission.donor_id == donor_id)
+    total_donations = donations.count()
+    completed_donations = donations.filter(ItemSubmission.status == "acknowledged").count()
+    pickup_due = donations.filter(ItemSubmission.status == "pickup_scheduled").count()
+    active_matches = db.query(DonationMatch).join(ItemSubmission).filter(ItemSubmission.donor_id == donor_id, DonationMatch.status.in_(["candidate", "recommended", "accepted"])).count()
+    items_donated = db.query(func.coalesce(func.sum(ItemSubmissionLine.quantity), 0)).join(ItemSubmission).filter(ItemSubmission.donor_id == donor_id).scalar()
+    activity = recent_activity(db.query(StatusHistory).join(ItemSubmission).filter(ItemSubmission.donor_id == donor_id))
+    return {"total_donations": total_donations, "active_matches": active_matches, "pickup_due": pickup_due, "completed_donations": completed_donations, "recent_activity": activity, "impact": {"items_donated": int(items_donated or 0), "completed_donations": completed_donations}}
+
+
+@router.get("/ngos/me/dashboard", tags=["Dashboards"])
+def ngo_dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_ngo_or_admin(user, user.ngo_id)
+    if not user.ngo_id:
+        raise HTTPException(status_code=403, detail="This account is not linked to an NGO")
+    ngo_id = user.ngo_id
+    active_demands_query = db.query(DemandRecord).filter(DemandRecord.ngo_id == ngo_id, DemandRecord.quantity_needed > 0, (DemandRecord.expiry_date.is_(None)) | (DemandRecord.expiry_date >= date.today()))
+    matches = db.query(DonationMatch).filter(DonationMatch.ngo_id == ngo_id)
+    active_donations = db.query(ItemSubmission).filter(ItemSubmission.ngo_id == ngo_id, ItemSubmission.status.notin_(["delivered", "acknowledged", "cancelled"])).count()
+    today = date.today()
+    operations = db.query(OperationAssignment).filter(OperationAssignment.ngo_id == ngo_id)
+    today_pickups = operations.filter(OperationAssignment.task_type == "pickup", func.date(OperationAssignment.scheduled_at) == today, OperationAssignment.status.in_(["scheduled", "in_progress"])).count()
+    pending_packaging = operations.filter(OperationAssignment.task_type == "packaging", OperationAssignment.status.in_(["scheduled", "in_progress"])).count()
+    pending_deliveries = operations.filter(OperationAssignment.task_type == "delivery", OperationAssignment.status.in_(["scheduled", "in_progress"])).count()
+    unassigned_tasks = db.query(ItemSubmission).filter(ItemSubmission.ngo_id == ngo_id, ItemSubmission.status.in_(["matched", "packaging_notified", "pickup_scheduled", "collected"])).filter(~ItemSubmission.operations.any(OperationAssignment.status.in_(["scheduled", "in_progress"]))).count()
+    completed_operations = operations.filter(OperationAssignment.status == "completed").count()
+    activity = recent_activity(db.query(StatusHistory).join(ItemSubmission).filter(ItemSubmission.ngo_id == ngo_id))
+    return {"active_demands": active_demands_query.count(), "incoming_matches": matches.filter(DonationMatch.status.in_(["candidate", "recommended"])).count(), "accepted_matches": matches.filter(DonationMatch.status == "accepted").count(), "pending_matches": matches.filter(DonationMatch.status.in_(["candidate", "recommended"])).count(), "active_donations": active_donations, "pending_packaging": pending_packaging, "todays_pickups": today_pickups, "pending_deliveries": pending_deliveries, "unassigned_tasks": unassigned_tasks, "completed_operations": completed_operations, "recent_activity": activity, "demand_summary": [{"class_name": demand.class_name, "quantity_needed": demand.quantity_needed} for demand in active_demands_query.order_by(DemandRecord.priority.desc(), DemandRecord.created_at.desc()).all()]}
 
 def haversine(lat1, lon1, lat2, lon2):
     radius = 6371.0; phi1, phi2 = math.radians(float(lat1)), math.radians(float(lat2)); dphi = math.radians(float(lat2 - lat1)); dlambda = math.radians(float(lon2 - lon1)); a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2; return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
@@ -232,8 +735,8 @@ def match_donation(donation_id: UUID, db: Session = Depends(get_db), user: User 
     donation = db.get(ItemSubmission, donation_id)
     if not donation: raise HTTPException(status_code=404, detail="Donation not found")
     require_owner(user, donor_id=donation.donor_id)
-    if donation.status in {"cancelled", "matched", "acknowledged"}:
-        raise HTTPException(status_code=409, detail="This donation is no longer eligible for new matching")
+    if donation.status != "submitted":
+        raise HTTPException(status_code=409, detail="Only submitted donations are eligible for new matching")
     donor = db.get(Donor, donation.donor_id) if donation.donor_id else None
     candidates = []
     for line in donation.lines:
@@ -272,7 +775,9 @@ def accept_match(match_id: UUID, db: Session = Depends(get_db), user: User = Dep
     if match.submission.status == "submitted":
         match.submission.status = "matched"
         db.add(StatusHistory(submission_id=match.submission.id, old_status="submitted", new_status="matched", changed_by_user_id=user.id, notes="Match accepted"))
-    db.commit(); db.refresh(match); db.refresh(match.submission); return {"match_id": str(match.id), "status": match.status, "donation": donation_view(match.submission)}
+    db.commit(); db.refresh(match); db.refresh(match.submission)
+    notify_donation_users(db, match.submission, "MATCH_ACCEPTED", changed_user_id=user.id)
+    return {"match_id": str(match.id), "status": match.status, "donation": donation_view(match.submission, include_history=True)}
 
 @router.get("/matches/{match_id}", tags=["Matching"])
 def get_match(match_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -289,6 +794,7 @@ def reject_match(match_id: UUID, reason: str | None = None, db: Session = Depend
     if match.submission.status == "cancelled": raise HTTPException(status_code=409, detail="Cancelled donations cannot reject matches")
     if match.status in {"accepted", "rejected"}: raise HTTPException(status_code=409, detail="This match is no longer changeable")
     match.status = "rejected"; match.rejection_reason = reason; db.commit()
+    notify_donation_users(db, match.submission, "MATCH_REJECTED", changed_user_id=user.id)
     return {"match_id": str(match.id), "status": match.status, "reason": match.rejection_reason}
 
 @router.get("/ngos/{ngo_id}/matches", tags=["Matching"])

@@ -1,334 +1,261 @@
-# Donation Platform — Camera-Based Item Detection Backend
+# Kindred Donation Backend
 
-Week 1-2 backend deliverable: browser camera capture -> YOLOv8-based item
-detection -> editable cart. This package covers the AI/backend half
-(dataset prep, training, inference API).
+FastAPI backend for the Kindred donation platform. It combines camera-based
+item detection with the authenticated donation-management workflow used by
+donors, NGOs, staff, and administrators.
 
-## What's in this folder
+## Backend structure
 
-| File                           | Stage              | What it does                                                                                                                            |
-| ------------------------------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `target_classes.py`            | Setup              | The 6 final categories, in fixed order. Everything else imports from here.                                                              |
-| `dataset_discovery.py`         | Data prep          | Auto-detects a dataset's format (YOLO/COCO/VOC/class-folders) and reads it.                                                             |
-| `pseudo_label.py`              | Data prep          | Uses the pretrained YOLOv8n (COCO classes) to auto-draft labels for electronics/furniture/utensils/books/food.                          |
-| `prepare_dataset.py`           | Data prep          | Merges every dataset (pseudo-labeled + your clothing dataset) into one clean unified dataset. Prints a class-balance report at the end. |
-| `dedupe_check.py`              | Data prep (verify) | Checks for near-duplicate images across train/val/test splits — catches data leakage before it inflates your validation accuracy.       |
-| `visualize_labels.py`          | Data prep (verify) | Draws bounding boxes onto a random sample of images so you can visually confirm annotations are correct, not just trust the numbers.    |
-| `train.py`                     | Training           | Fine-tunes YOLOv8 nano on the unified dataset.                                                                                          |
-| `inference_pipeline.py`        | Serving            | Loads the trained model, runs detection, aggregates results into cart-ready JSON.                                                       |
-| `main.py`                      | Serving            | FastAPI server: `/detect` for the camera-capture frontend, `/submissions` to save the donor's reviewed cart to PostgreSQL.              |
-| `db.py`                        | Database           | SQLAlchemy models + connection, matching `schema.sql`.                                                                                  |
-| `schema.sql`                   | Database           | Multi-tenant PostgreSQL schema — NGOs as tenants, donors, item submissions, demand records.                                             |
-| `camera_capture_and_cart.html` | Frontend           | Browser camera capture (MediaDevices API) + editable item cart, calls `/detect` then `/submissions`.                                    |
-| `requirements.txt`             | Setup              | Python dependencies.                                                                                                                    |
-| `CODE_WALKTHROUGH.md`          | Docs               | Line-by-line explanation of every file (technical).                                                                                     |
-| `SIMPLE_GUIDE.md`              | Docs               | Plain-language explanation of every file (beginner-friendly).                                                                           |
+```text
+donation_backend_final/
+├── main.py                         FastAPI application and legacy routes
+├── api_v2.py                       Authenticated /api routes
+├── db.py                           SQLAlchemy models and database session
+├── schemas.py                      Pydantic request/response validation
+├── security.py                     Password hashing, JWT, and role checks
+├── config.py                       Environment configuration
+├── inference_pipeline.py           Reusable fine-tuned YOLOv8 pipeline
+├── target_classes.py               Canonical donation categories
+├── status_service.py               Donation status transitions and permissions
+├── packaging_service.py            Category-specific packaging checklists
+├── notification_service.py         In-app, email, and optional Twilio delivery
+├── schema.sql                      Complete PostgreSQL schema
+├── migrations/                     Additive Milestone 6 migrations
+├── requirements.txt                Python dependencies
+├── .env.example                    Environment variable template
+├── train.py                        Fine-tunes the custom YOLOv8 model
+├── prepare_dataset.py              Builds the unified training dataset
+├── dataset_discovery.py            Detects supported dataset formats
+├── pseudo_label.py                 Creates draft labels for supported classes
+├── dedupe_check.py                 Checks train/validation/test leakage
+├── visualize_labels.py             Renders annotation previews
+├── camera_capture_and_cart.html    Legacy browser camera client
+├── CODE_WALKTHROUGH.md             Technical file walkthrough
+└── SIMPLE_GUIDE.md                 Beginner-friendly project guide
+```
 
-Read `SIMPLE_GUIDE.md` first if you're new to this, then `CODE_WALKTHROUGH.md`
-when you want the line-by-line detail.
+## Original AI model details
 
-## Setup
+The backend supports two model modes controlled by `USE_CUSTOM_MODEL`.
 
-```bash
-# 1. Create a virtual environment (recommended)
-python3 -m venv venv
-source venv/bin/activate        # on Windows: venv\Scripts\activate
+### Default model: YOLO-World
 
-# 2. Install dependencies
+With `USE_CUSTOM_MODEL=false`, `main.py` loads the pretrained
+`yolov8s-world.pt` YOLO-World model and supplies these text classes:
+
+```text
+book, shirt, pants, dress, shoe, bottle, water bottle,
+laptop, mobile phone, cell phone, bag, backpack, handbag,
+chair, table, sofa, cup, plate, bowl, utensil, food
+```
+
+Detected objects are mapped into six platform categories:
+
+| Platform category | Mapped examples |
+| --- | --- |
+| `books` | book |
+| `clothing` | shirt, pants, dress, shoe, bag, backpack, handbag |
+| `food` | food |
+| `electronics` | laptop, mobile phone, cell phone |
+| `furniture` | chair, table, sofa |
+| `utensils` | bottle, water bottle, cup, plate, bowl, utensil |
+
+The `/detect` route runs inference with confidence `0.25` and IoU `0.45`.
+Results are grouped by category, quantities are estimated by counting
+detection boxes, and average confidence below `0.50` sets `needs_review=true`.
+
+### Optional custom model
+
+With `USE_CUSTOM_MODEL=true`, the backend loads `CUSTOM_MODEL_PATH`, normally:
+
+```text
+runs/detect/donation_items_yolov8n/weights/best.pt
+```
+
+This is the fine-tuned YOLOv8 model trained for the six platform categories.
+Its own class names are used directly. `inference_pipeline.py` is the
+reusable version of this pipeline; it uses confidence `0.35`, IoU `0.45`, and
+flags aggregate confidence below `0.50` for donor review.
+
+## Database and configuration
+
+The application uses PostgreSQL through SQLAlchemy. Copy `.env.example` to
+`.env` and configure at least:
+
+```env
+DATABASE_URL=postgresql://username:password@localhost:5432/donation_platform
+JWT_SECRET_KEY=replace-with-a-long-random-secret
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+```
+
+Other settings include `CORS_ALLOWED_ORIGINS`, `USE_CUSTOM_MODEL`,
+`CUSTOM_MODEL_PATH`, `MAX_UPLOAD_BYTES`, SMTP settings, and optional Twilio
+settings. In-app notifications are stored in PostgreSQL; external delivery is
+best-effort.
+
+For an existing database, apply the additive migrations in order:
+
+```powershell
+psql "$env:DATABASE_URL" -f migrations/001_milestone6_notifications.sql
+psql "$env:DATABASE_URL" -f migrations/002_milestone6_staff_operations.sql
+```
+
+## Running the backend
+
+```powershell
+python -m venv venv
+venv\Scripts\activate
 pip install -r requirements.txt
-# (if you're NOT in a venv and get an "externally managed environment" error:
-#  pip install -r requirements.txt --break-system-packages)
+uvicorn main:app --reload --host 0.0.0.0 --port 8000 --access-log
 ```
 
-### Windows: "Unknown compiler" / numpy build error
+Interactive documentation is available at `/docs`, `/redoc`, and
+`/openapi.json`. Protected routes use:
 
-If pip tries to _compile_ numpy from source and fails with a
-`vswhere.exe`/`cl`/`gcc not found` error, it means pip couldn't find a
-prebuilt wheel for your Python version (common on brand-new Python
-releases like 3.13). Fix, in order of preference:
-
-1. Check `python --version`. If it's very new (3.13+), install Python
-   3.11 or 3.12 instead and create your venv with that:
-   ```bash
-   py -3.11 -m venv venv
-   venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
-2. Or force pip to only use prebuilt wheels (never compile from source):
-   ```bash
-   pip install --only-binary :all: -r requirements.txt
-   ```
-   If this fails for a specific package, it means no wheel exists for
-   your Python version at all — go with option 1 instead.
-
-## Execution order
-
-### 1. Organize your raw images
-
-```
-raw_datasets/
-  electronics_raw/      # unlabeled photos
-  furniture_raw/        # unlabeled photos
-  utensils_raw/         # unlabeled photos
-  books_raw/            # unlabeled photos
-  food_raw/             # unlabeled photos
-  clothing_dataset/     # your already-labeled clothing dataset, any format
+```text
+Authorization: Bearer <access_token>
 ```
 
-### 2. Auto-draft labels for the 5 COCO-overlapping categories
+## API reference
 
-```bash
-python pseudo_label.py --input raw_datasets/electronics_raw --category electronics
-python pseudo_label.py --input raw_datasets/furniture_raw   --category furniture
-python pseudo_label.py --input raw_datasets/utensils_raw    --category utensils
-python pseudo_label.py --input raw_datasets/books_raw       --category books
-python pseudo_label.py --input raw_datasets/food_raw        --category food
-```
+### Legacy public AI and submission APIs
 
-Then open `pseudo_labeled/review_report.csv` and spot-check the flagged rows
-(low confidence / zero detections) before trusting them.
+These routes support the original camera-capture frontend and remain
+available for compatibility.
 
-### 3. Fill in the label map, dry run first
-
-Open `prepare_dataset.py`:
-
-- `SOURCE_ROOTS` already points at `pseudo_labeled/` and
-  `raw_datasets/clothing_dataset` — adjust paths if yours differ.
-- Set `DRY_RUN = True`, then run:
-
-```bash
-python prepare_dataset.py
-```
-
-This prints every class name found that isn't yet in `LABEL_MAP` (mainly
-your clothing dataset's own class names). Add them to `LABEL_MAP`, mapped
-to `"clothing"`.
-
-### 4. Build the unified dataset for real
-
-Set `DRY_RUN = False`, run `prepare_dataset.py` again. Output:
-
-```
-dataset_unified/
-  images/{train,val,test}/
-  labels/{train,val,test}/
-  data.yaml
-```
-
-It also prints a class-balance table — check no class is far below the others.
-
-### 5. Check for cross-split duplicates (do this before training)
-
-```bash
-python dedupe_check.py --dataset dataset_unified
-```
-
-If it reports cross-split leakage (the same/near-identical photo in two
-splits), remove the duplicate from one split — otherwise your validation
-accuracy will look better than the model actually is.
-
-### 6. Visually verify a sample of annotations
-
-```bash
-python visualize_labels.py --dataset dataset_unified --split train --n 20
-```
-
-Open the images saved in `label_preview/train/` and check: is each box
-actually around the right item, with the right class name? This catches
-mistakes that numbers alone (confidence scores, class counts) can't show you.
-This matters especially for pseudo-labeled classes and the whole-image
-boxes from folder-only sources.
-
-### 7. Sanity-check training, then train for real
-
-```bash
-python train.py --epochs 20      # quick check — catches label mistakes fast
-python train.py                  # full run (default 80 epochs)
-```
-
-Best weights land at `runs/detect/donation_items_yolov8n/weights/best.pt`.
-
-### 8. Point the inference pipeline at your weights
-
-`inference_pipeline.py`'s `MODEL_PATH` already defaults to that path — only
-edit it if you changed `--name`/`--project` during training.
-
-### 9. Set up PostgreSQL
-
-```bash
-createdb donation_platform
-psql -U your_user -d donation_platform -f schema.sql
-```
-
-Set the connection string as an environment variable before starting the API:
-
-```bash
-# macOS/Linux:
-export DATABASE_URL="postgresql://your_user:your_password@localhost:5432/donation_platform"
-# Windows PowerShell:
-$env:DATABASE_URL = "postgresql://your_user:your_password@localhost:5432/donation_platform"
-```
-
-For Milestone 2, copy `.env.example` to `.env` and set at least
-`DATABASE_URL` and a long random `JWT_SECRET_KEY`. The API loads these
-settings at startup; `.env` is ignored by Git. You can also configure
-`JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `CORS_ALLOWED_ORIGINS`,
-`USE_CUSTOM_MODEL`, `CUSTOM_MODEL_PATH`, and `MAX_UPLOAD_BYTES`.
-
-`MAX_UPLOAD_BYTES` defaults to 10 MiB. The `/detect` endpoint accepts only
-PNG, JPG/JPEG, BMP, and WebP uploads. The API also adds basic security
-headers and returns generic 500 responses while logging the detailed server
-exception locally.
-
-Apply the additive tables and constraint changes in `schema.sql` to an
-existing development database using a migration process; do not drop data.
-The current database rules require donation and demand quantities to be at
-least 1, and detection confidence values must be between 0 and 1 when present.
-
-Milestone 2 authenticated routes are grouped under `/api`: authentication,
-NGO and demand management, donor donations, audited status transitions, and
-transparent rule-based matching. Matching uses item category, quantity fit,
-Haversine distance when coordinates exist, and demand priority. Semantic
-vector similarity is intentionally reported as unavailable until an actual
-embedding service is configured.
-
-### 10. Run the API and test it
-
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-```bash
-curl http://localhost:8000/health
-curl -X POST -F "file=@some_test_photo.jpg" http://localhost:8000/detect
-```
-
-Once `/detect` returns sensible JSON, open `camera_capture_and_cart.html` directly
-in a browser (or serve it with any static file server) to test the full
-camera -> detect -> editable cart -> submit -> PostgreSQL flow end to end.
-
-## API endpoint reference
-
-The interactive API documentation is available at `/docs`, with the raw
-OpenAPI document at `/openapi.json` and ReDoc at `/redoc`.
-
-### Public and legacy endpoints
-
-These routes are preserved for the Milestone 1 frontend.
-
-| Method | Endpoint                       | What it does                                                                                                                                 | Access             |
-| ------ | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| `GET`  | `/`                            | Confirms that the Donation Platform API is running.                                                                                          | Public             |
-| `GET`  | `/health`                      | Returns backend health and the active AI model name.                                                                                         | Public             |
-| `POST` | `/detect`                      | Accepts an image, runs YOLO/YOLO-World detection, maps objects to the six donation categories, and returns quantities and confidence values. | Public             |
-| `POST` | `/submissions`                 | Saves the reviewed cart from the existing camera frontend as a donation submission.                                                          | Public legacy flow |
-| `GET`  | `/submissions`                 | Lists saved legacy submissions for the database view.                                                                                        | Public legacy flow |
-| `GET`  | `/submissions/{submission_id}` | Returns one legacy submission and its item lines.                                                                                            | Public legacy flow |
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/` | Confirms that the API is running. |
+| `GET` | `/health` | Returns health status and the active model name. |
+| `POST` | `/detect` | Accepts an image and returns detected categories, quantities, confidence, and review flags. |
+| `POST` | `/submissions` | Saves the reviewed legacy cart as a submitted donation. |
+| `GET` | `/submissions` | Lists legacy submissions. |
+| `GET` | `/submissions/{submission_id}` | Returns one legacy submission and its item lines. |
 
 ### Authentication
 
-Send the returned token on protected requests as
-`Authorization: Bearer <access_token>`.
+| Method | Endpoint | Description | Access |
+| --- | --- | --- | --- |
+| `POST` | `/api/auth/register` | Creates a donor or NGO account with its linked profile. Public admin registration is rejected. | Public |
+| `POST` | `/api/auth/login` | Authenticates a user and returns a JWT access token. | Public |
+| `GET` | `/api/auth/me` | Returns the current user's account and role. | Authenticated |
 
-| Method | Endpoint             | What it does                                                                                                                          | Access        |
-| ------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| `POST` | `/api/auth/register` | Creates a donor or NGO account and securely hashes the password. Donor and NGO accounts are linked to their ownership record; admin accounts cannot be created publicly. | Public        |
-| `POST` | `/api/auth/login`    | Checks credentials and returns a JWT access token plus basic user information.                                                        | Public        |
-| `GET`  | `/api/auth/me`       | Returns the currently authenticated user's ID, email, role, and active status.                                                        | Authenticated |
+### Donor profile and admin donor registry
 
-### NGO management
+| Method | Endpoint | Description | Access |
+| --- | --- | --- | --- |
+| `GET` | `/api/donors/me` | Returns the authenticated donor profile, including optional coordinates. | Donor |
+| `PUT` | `/api/donors/me` | Updates donor details and coordinates; account email remains read-only. | Donor |
+| `GET` | `/api/admin/donors` | Lists donor records with `limit` and `offset` pagination. | Admin |
 
-| Method   | Endpoint                          | What it does                                                                                             | Access             |
-| -------- | --------------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------ |
-| `POST`   | `/api/ngos`                       | Creates an NGO, validates contact details and coordinates, and starts it as unverified.                  | Admin              |
-| `GET`    | `/api/ngos`                       | Lists NGOs with optional `city`, `verified`, `limit`, and `offset` filters.                              | Public             |
-| `GET`    | `/api/ngos/{ngo_id}`              | Returns public information for one NGO.                                                                  | Public             |
-| `PUT`    | `/api/ngos/{ngo_id}`              | Updates an NGO's profile and location information.                                                       | NGO owner or admin |
-| `PATCH`  | `/api/ngos/{ngo_id}/verification` | Approves or removes an NGO's verified status.                                                            | Admin              |
-| `DELETE` | `/api/ngos/{ngo_id}`              | Deactivates an NGO by un-verifying it and disabling its NGO users without deleting historical donations. | Admin              |
+### NGO and demand APIs
 
-### Admin donor registry
+| Method | Endpoint | Description | Access |
+| --- | --- | --- | --- |
+| `POST` | `/api/ngos` | Creates an unverified NGO. | Admin |
+| `GET` | `/api/ngos` | Lists NGOs with city, verification, and pagination filters. | Public |
+| `GET` | `/api/ngos/{ngo_id}` | Returns one NGO profile. | Public |
+| `PUT` | `/api/ngos/{ngo_id}` | Updates NGO profile and location. | NGO owner/admin |
+| `PATCH` | `/api/ngos/{ngo_id}/verification` | Verifies or un-verifies an NGO. | Admin |
+| `DELETE` | `/api/ngos/{ngo_id}` | Deactivates an NGO and its users without deleting history. | Admin |
+| `POST` | `/api/ngos/{ngo_id}/demands` | Creates a category demand with quantity, priority, and optional expiry. | NGO owner/admin |
+| `GET` | `/api/ngos/{ngo_id}/demands` | Lists demands with active/category/priority filters. | NGO owner/admin |
+| `GET` | `/api/demands/{demand_id}` | Returns one demand. | NGO owner/admin |
+| `PUT` | `/api/demands/{demand_id}` | Updates a demand. | NGO owner/admin |
+| `DELETE` | `/api/demands/{demand_id}` | Deletes a demand. | NGO owner/admin |
 
-The donor registry is available only to authenticated admin users. Send the
-JWT returned by `/api/auth/login` as `Authorization: Bearer <access_token>`.
+### Donation APIs
 
-| Method | Endpoint | What it does | Access |
-| ------ | -------- | ------------ | ------ |
-| `GET` | `/api/admin/donors` | Lists donor records ordered by donor ID. Supports `limit` and `offset`; `limit` must be between 1 and 100. | Admin |
+| Method | Endpoint | Description | Access |
+| --- | --- | --- | --- |
+| `POST` | `/api/donations` | Creates a donation with one or more categorized item lines. | Donor |
+| `GET` | `/api/donations` | Lists donations filtered by role, status, limit, and offset. | Authenticated |
+| `GET` | `/api/donations/{donation_id}` | Returns donation details, items, NGO, matches, pickup time, and history. | Owner/NGO/admin |
+| `PUT` | `/api/donations/{donation_id}` | Replaces item lines while the donation is submitted. | Donor owner |
+| `POST` | `/api/donations/{donation_id}/cancel` | Cancels a donation through the status rules. | Owner/NGO/admin |
+| `PATCH` | `/api/donations/{donation_id}/status` | Applies an authorized audited status transition. | Owner/NGO/admin |
+| `GET` | `/api/donations/{donation_id}/status-history` | Returns status audit history. | Owner/NGO/admin |
 
-Example:
+Donation lifecycle:
 
-```bash
-curl -H "Authorization: Bearer <admin_access_token>" \
-  "http://localhost:8000/api/admin/donors?limit=50&offset=0"
+```text
+submitted -> matched -> packaging_notified -> pickup_scheduled
+           -> collected -> delivered -> acknowledged
 ```
 
-Unauthenticated or non-admin requests receive `401` or `403` respectively.
+### Matching APIs
 
-### NGO demand registry
+Matching uses category, quantity fit, NGO demand priority, and geographic
+distance when coordinates are available. Results include explainable score
+components; semantic similarity is not used unless an embedding service is
+added later.
 
-Supported categories are `clothing`, `food`, `books`, `electronics`,
-`furniture`, and `utensils`. Demand priority is from 1 to 5.
+| Method | Endpoint | Description | Access |
+| --- | --- | --- | --- |
+| `POST` | `/api/donations/{donation_id}/match` | Finds and stores compatible NGO matches. | Donor owner/admin |
+| `GET` | `/api/donations/{donation_id}/matches` | Lists stored matches for a donation. | Owner/NGO/admin |
+| `GET` | `/api/matches/{match_id}` | Returns one match and its score details. | Owner/matched NGO/admin |
+| `POST` | `/api/matches/{match_id}/accept` | Accepts a match and associates the NGO. | Owner/matched NGO/admin |
+| `POST` | `/api/matches/{match_id}/reject` | Rejects a match with an optional reason. | Owner/matched NGO/admin |
+| `GET` | `/api/ngos/{ngo_id}/matches` | Lists incoming NGO matches with filters. | NGO owner/admin |
 
-| Method   | Endpoint                     | What it does                                                                                                                                  | Access             |
-| -------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| `POST`   | `/api/ngos/{ngo_id}/demands` | Creates an NGO demand with category, quantity, priority, and optional expiry date.                                                            | NGO owner or admin |
-| `GET`    | `/api/ngos/{ngo_id}/demands` | Lists demands with optional `active_only`, `class_name`, `priority`, `limit`, and `offset` filters. Active demands have quantity above zero and are not expired. | NGO owner or admin |
-| `GET`    | `/api/demands/{demand_id}`   | Returns one demand after checking NGO ownership.                                                                                              | NGO owner or admin |
-| `PUT`    | `/api/demands/{demand_id}`   | Updates a demand's category, quantity, priority, or expiry date.                                                                              | NGO owner or admin |
-| `DELETE` | `/api/demands/{demand_id}`   | Deletes a demand.                                                                                                                             | NGO owner or admin |
+### Packaging and pickup APIs
 
-### Donation management
+| Method | Endpoint | Description | Access |
+| --- | --- | --- | --- |
+| `POST` | `/api/donations/{donation_id}/packaging-notify` | Moves an accepted donation to `packaging_notified` and creates notifications. | Assigned NGO/admin |
+| `GET` | `/api/donations/{donation_id}/packaging-checklist` | Returns category-specific packaging tasks. | Donor/NGO/admin |
+| `GET` | `/api/donations/{donation_id}/pickup` | Returns the current pickup schedule. | Donor/NGO/admin |
+| `POST` | `/api/donations/{donation_id}/pickup/schedule` | Schedules a future pickup and moves the donation to `pickup_scheduled`. | Donor/NGO/admin |
+| `PUT` | `/api/donations/{donation_id}/pickup` | Reschedules an existing pickup. | Donor/NGO/admin |
+| `POST` | `/api/donations/{donation_id}/pickup/reschedule` | Deprecated compatibility alias for rescheduling pickup. | Donor/NGO/admin |
 
-| Method | Endpoint                              | What it does                                                                                                                                                      | Access                                     |
-| ------ | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `POST` | `/api/donations`                      | Creates a submitted donation for the authenticated donor and stores each item, quantity, and AI confidence.                                                       | Donor                                      |
-| `GET`  | `/api/donations`                      | Lists donations. Donors see only their own donations; NGO users see donations matched to their NGO; admins can see all. Supports `status`, `limit`, and `offset`. | Authenticated                              |
-| `GET`  | `/api/donations/{donation_id}`        | Returns one donation with ownership and item details.                                                                                                             | Owner, associated NGO, or admin            |
-| `PUT`  | `/api/donations/{donation_id}`        | Replaces item lines before matching and marks the new lines as donor-edited while retaining submitted confidence values.                                          | Donation owner while status is `submitted` |
-| `POST` | `/api/donations/{donation_id}/cancel` | Cancels a donation through the legal status-transition system.                                                                                                    | Donation owner, associated NGO, or admin   |
+Pickup timestamps must include a timezone and be in the future.
 
-The current API keeps image detection separate for frontend compatibility:
-call `POST /detect` first, let the donor review the result, then call
-`POST /api/donations` or the legacy `POST /submissions` route. A separate
-`/api/donations/from-image` endpoint is not currently implemented.
+### NGO staff and operations APIs
 
-### Donation status and audit history
+Staff roles are `packaging`, `pickup`, and `delivery`. Staff are scoped to an
+NGO and must be active and assigned to the matching task type.
 
-Allowed transitions are `submitted -> matched -> packaging_notified ->
-pickup_scheduled -> collected -> delivered -> acknowledged`. A donation can
-be cancelled before collection. Every status change records the previous
-status, new status, authenticated user, timestamp, and optional notes.
+| Method | Endpoint | Description | Access |
+| --- | --- | --- | --- |
+| `GET` | `/api/ngos/me/staff` | Lists NGO staff with active and pagination filters. | NGO |
+| `POST` | `/api/ngos/me/staff` | Creates staff and rejects duplicate email within the NGO. | NGO |
+| `PUT` | `/api/ngos/me/staff/{staff_id}` | Updates staff details or active state. | NGO |
+| `DELETE` | `/api/ngos/me/staff/{staff_id}` | Deactivates staff while preserving history. | NGO |
+| `GET` | `/api/ngos/me/operations` | Lists NGO operations with task and status filters. | NGO |
+| `GET` | `/api/ngos/me/operations/today` | Lists today's operations. | NGO |
+| `POST` | `/api/donations/{donation_id}/operations` | Assigns packaging, pickup, or delivery work. | Assigned NGO/admin |
+| `GET` | `/api/donations/{donation_id}/operations` | Lists operations for an accessible donation. | Donor/NGO/admin |
+| `PUT` | `/api/donations/{donation_id}/operations/{assignment_id}` | Updates staff, task, schedule, notes, or operation status. | Assigned NGO/admin |
 
-| Method  | Endpoint                                      | What it does                                                                          | Access                                   |
-| ------- | --------------------------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `PATCH` | `/api/donations/{donation_id}/status`         | Validates and applies a legal status transition, then writes a status-history record. | Donation owner, associated NGO, or admin |
-| `GET`   | `/api/donations/{donation_id}/status-history` | Returns the donation's chronological status changes and notes.                        | Donation owner, associated NGO, or admin |
+Operation statuses are `scheduled`, `in_progress`, `completed`, and
+`cancelled`. The backend validates NGO ownership, staff role, active state,
+legal status transitions, overlapping assignments, and exact pickup time
+matching. The validated `staff_id` is passed to the ORM exactly once.
 
-### Matching
+### Notifications and dashboards
 
-Matching considers verified NGOs with active demands. It calculates exact
-category match, quantity fit, geographic proximity using the Haversine
-formula when coordinates exist, and NGO demand priority. Results are ranked
-and the score components are returned for transparency. Semantic/vector
-similarity is not claimed or used unless a future embedding service is added.
+| Method | Endpoint | Description | Access |
+| --- | --- | --- | --- |
+| `GET` | `/api/notifications` | Lists the current user's notifications with unread and pagination filters. | Authenticated |
+| `PATCH` | `/api/notifications/{notification_id}/read` | Marks one owned notification as read. | Authenticated |
+| `PATCH` | `/api/notifications/read-all` | Marks all owned notifications as read. | Authenticated |
+| `GET` | `/api/donors/me/dashboard` | Returns donor counts, active matches, pickup status, impact, and activity. | Donor |
+| `GET` | `/api/ngos/me/dashboard` | Returns NGO demand, match, donation, operation, and activity metrics. | NGO |
 
-| Method | Endpoint                               | What it does                                                                                                                  | Access                                   |
-| ------ | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `POST` | `/api/donations/{donation_id}/match`   | Finds active compatible NGO demands, calculates explainable scores, stores recommended matches, and returns them ranked.      | Donation owner or admin                  |
-| `GET`  | `/api/donations/{donation_id}/matches` | Lists stored matches for a donation, sorted by score with score components and explanations.                                  | Donation owner, associated NGO, or admin |
-| `GET`  | `/api/matches/{match_id}`              | Returns one match with its NGO, donation reference, score breakdown, and rejection reason if present.                         | Donation owner, matched NGO, or admin    |
-| `POST` | `/api/matches/{match_id}/accept`       | Accepts a candidate, rejects competing candidates, associates the donation with the NGO, and moves the donation to `matched`. | Donation owner, matched NGO, or admin    |
-| `POST` | `/api/matches/{match_id}/reject`       | Rejects a match and preserves an optional rejection reason.                                                                   | Donation owner, matched NGO, or admin    |
-| `GET`  | `/api/ngos/{ngo_id}/matches`           | Lists incoming matches for an NGO with optional `status`, `limit`, and `offset` filters.                                      | NGO owner or admin                       |
+## Validation and response behavior
 
-## Notes
-
-- Clothing has no pretrained-model shortcut — COCO has no clothing classes,
-  so that dataset must already be labeled (or labeled by hand).
-- `target_classes.py` is the single source of truth for class order —
-  don't edit it after you've started labeling/training, or class IDs will
-  no longer match across your files.
-- Steps 5 and 6 (dedupe check, visual label check) are easy to skip when
-  in a hurry — don't. A leaked duplicate or a wrong box is much cheaper to
-  catch here than after an 80-epoch training run.
+- Supported categories: `clothing`, `food`, `books`, `electronics`,
+  `furniture`, and `utensils`.
+- Quantities must be positive; confidence values must be between 0 and 1.
+- Pagination limits are 1-100 with a non-negative offset.
+- Invalid request data returns `422`.
+- Missing or invalid authentication returns `401`; insufficient permissions
+  return `403`.
+- Workflow conflicts, invalid transitions, schedule conflicts, and duplicate
+  staff email return `409` where applicable.
+- Uvicorn and application middleware log successful requests and failures.
+- CORS is configured through `CORS_ALLOWED_ORIGINS`; do not use a wildcard
+  origin as an authentication workaround.

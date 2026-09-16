@@ -98,10 +98,6 @@ CREATE INDEX idx_submission_lines_submission ON item_submission_lines (submissio
 CREATE INDEX idx_demand_ngo             ON demand_records (ngo_id);
 CREATE INDEX idx_demand_class           ON demand_records (class_name);
 CREATE INDEX idx_demand_expiry          ON demand_records (expiry_date);
-CREATE INDEX idx_users_email            ON users (email);
-CREATE INDEX idx_users_role             ON users (role);
-CREATE INDEX idx_users_donor_id         ON users (donor_id);
-CREATE INDEX idx_users_ngo_id           ON users (ngo_id);
 CREATE INDEX idx_ngos_verified          ON ngos (verified);
 CREATE INDEX idx_ngos_city              ON ngos (city);
 
@@ -119,6 +115,11 @@ CREATE TABLE users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE INDEX idx_users_email            ON users (email);
+CREATE INDEX idx_users_role             ON users (role);
+CREATE INDEX idx_users_donor_id         ON users (donor_id);
+CREATE INDEX idx_users_ngo_id           ON users (ngo_id);
+
 CREATE TABLE status_history (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     submission_id UUID NOT NULL REFERENCES item_submissions(id) ON DELETE CASCADE,
@@ -127,6 +128,46 @@ CREATE TABLE status_history (
     changed_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
     changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     notes VARCHAR(1000)
+);
+
+CREATE TABLE notifications (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    donation_id     UUID REFERENCES item_submissions(id) ON DELETE CASCADE,
+    type            VARCHAR(50) NOT NULL,
+    title           VARCHAR(255) NOT NULL,
+    message         VARCHAR(2000) NOT NULL,
+    channel         VARCHAR(20) NOT NULL DEFAULT 'in_app',
+    is_read         BOOLEAN NOT NULL DEFAULT FALSE,
+    delivery_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    sent_at         TIMESTAMPTZ
+);
+
+CREATE TABLE ngo_staff (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    ngo_id      UUID NOT NULL REFERENCES ngos(id) ON DELETE CASCADE,
+    name        VARCHAR(255) NOT NULL,
+    phone       VARCHAR(50) NOT NULL,
+    email       VARCHAR(255) NOT NULL,
+    role        VARCHAR(20) NOT NULL CHECK (role IN ('packaging', 'pickup', 'delivery')),
+    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (ngo_id, email)
+);
+
+CREATE TABLE operation_assignments (
+    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    donation_id  UUID NOT NULL REFERENCES item_submissions(id) ON DELETE CASCADE,
+    ngo_id       UUID NOT NULL REFERENCES ngos(id) ON DELETE CASCADE,
+    staff_id     UUID NOT NULL REFERENCES ngo_staff(id) ON DELETE RESTRICT,
+    task_type    VARCHAR(20) NOT NULL CHECK (task_type IN ('packaging', 'pickup', 'delivery')),
+    scheduled_at TIMESTAMPTZ NOT NULL,
+    status       VARCHAR(20) NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'in_progress', 'completed', 'cancelled')),
+    notes        VARCHAR(2000),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE donation_matches (
@@ -148,3 +189,9 @@ CREATE TABLE donation_matches (
 
 CREATE INDEX idx_status_history_submission ON status_history (submission_id, changed_at);
 CREATE INDEX idx_matches_submission ON donation_matches (submission_id, score DESC);
+CREATE INDEX idx_notifications_user ON notifications (user_id, created_at DESC);
+CREATE INDEX idx_notifications_donation ON notifications (donation_id);
+CREATE INDEX idx_staff_ngo ON ngo_staff (ngo_id, is_active);
+CREATE INDEX idx_operations_ngo ON operation_assignments (ngo_id, status, scheduled_at);
+CREATE INDEX idx_operations_donation ON operation_assignments (donation_id, created_at);
+CREATE INDEX idx_operations_staff ON operation_assignments (staff_id, scheduled_at);
