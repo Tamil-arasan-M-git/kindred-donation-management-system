@@ -21,7 +21,7 @@ import uuid
 
 from sqlalchemy import (
     create_engine, Column, String, Integer, Boolean, DateTime, ForeignKey,
-    Numeric, SmallInteger, Date, CheckConstraint, UniqueConstraint,
+    Numeric, SmallInteger, Date, CheckConstraint, UniqueConstraint, Index, text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
@@ -201,6 +201,13 @@ class OperationAssignment(Base):
     __table_args__ = (
         CheckConstraint("task_type IN ('packaging', 'pickup', 'delivery')", name="operation_task_type_valid"),
         CheckConstraint("status IN ('scheduled', 'in_progress', 'completed', 'cancelled')", name="operation_status_valid"),
+        Index(
+            "uq_active_operation_per_donation_task",
+            "donation_id",
+            "task_type",
+            unique=True,
+            postgresql_where=text("status IN ('scheduled', 'in_progress')"),
+        ),
     )
     donation = relationship("ItemSubmission", back_populates="operations")
     ngo = relationship("NGO", back_populates="operations")

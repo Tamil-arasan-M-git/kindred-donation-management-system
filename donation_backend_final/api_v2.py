@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from db import DemandRecord, DonationMatch, Donor, ItemSubmission, ItemSubmissionLine, NGO, NGOStaff, Notification, OperationAssignment, StatusHistory, User, get_db
@@ -403,6 +404,21 @@ def validate_operation_status(current: str, requested: str):
         raise HTTPException(status_code=409, detail=f"Operation cannot transition from {current} to {requested}")
 
 
+def ensure_no_active_operation_for_donation_task(db: Session, donation_id: UUID, task_type: str, exclude_id: UUID | None = None):
+    query = db.query(OperationAssignment).filter(
+        OperationAssignment.donation_id == donation_id,
+        OperationAssignment.task_type == task_type,
+        OperationAssignment.status.in_(["scheduled", "in_progress"]),
+    )
+    if exclude_id:
+        query = query.filter(OperationAssignment.id != exclude_id)
+    if query.first():
+        raise HTTPException(
+            status_code=409,
+            detail=f"An active {task_type} operation already exists for this donation.",
+        )
+
+
 def notify_operation_event(db: Session, donation: ItemSubmission, task_type: str, status: str, user_id=None):
     event_type = {
         ("packaging", "scheduled"): "PACKAGING_SCHEDULED",
@@ -454,6 +470,7 @@ def create_operation(donation_id: UUID, request: OperationCreate, db: Session = 
         validate_pickup_operation_schedule(donation, request.scheduled_at)
     if request.task_type == "delivery" and donation.status not in {"collected", "delivered"}:
         raise HTTPException(status_code=409, detail="Delivery operations require a collected donation")
+    ensure_no_active_operation_for_donation_task(db, donation.id, request.task_type)
     overlap = db.query(OperationAssignment).filter(OperationAssignment.staff_id == staff.id, OperationAssignment.scheduled_at == request.scheduled_at, OperationAssignment.status.in_(["scheduled", "in_progress"])).first()
     if overlap:
         raise HTTPException(status_code=409, detail="Staff member already has an active assignment at this time")
@@ -461,7 +478,12 @@ def create_operation(donation_id: UUID, request: OperationCreate, db: Session = 
     operation_data.pop("staff_id", None)
     operation = OperationAssignment(donation_id=donation.id, ngo_id=ngo_id, staff_id=staff.id, **operation_data)
     db.add(operation)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        logger.warning("Active operation conflict while creating assignment for donation %s: %s", donation.id, exc)
+        raise HTTPException(status_code=409, detail=f"An active {request.task_type} operation already exists for this donation.")
     db.refresh(operation)
     notify_operation_event(db, donation, operation.task_type, operation.status, user.id)
     return operation_view(operation)
@@ -494,12 +516,20 @@ def update_operation(donation_id: UUID, assignment_id: UUID, request: OperationU
         validate_pickup_operation_schedule(donation, scheduled_at)
     if "status" in values:
         validate_operation_status(operation.status, values["status"])
+    requested_status = values.get("status", operation.status)
+    if requested_status in {"scheduled", "in_progress"}:
+        ensure_no_active_operation_for_donation_task(db, donation.id, task_type, exclude_id=operation.id)
     overlap = db.query(OperationAssignment).filter(OperationAssignment.staff_id == staff.id, OperationAssignment.scheduled_at == scheduled_at, OperationAssignment.status.in_(["scheduled", "in_progress"]), OperationAssignment.id != operation.id).first()
     if overlap:
         raise HTTPException(status_code=409, detail="Staff member already has an active assignment at this time")
     for key, value in values.items():
         setattr(operation, key, value)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        logger.warning("Active operation conflict while updating assignment %s: %s", assignment_id, exc)
+        raise HTTPException(status_code=409, detail=f"An active {task_type} operation already exists for this donation.")
     db.refresh(operation)
     notify_operation_event(db, donation, operation.task_type, operation.status, user.id)
     return operation_view(operation)

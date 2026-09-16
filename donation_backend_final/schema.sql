@@ -195,3 +195,6 @@ CREATE INDEX idx_staff_ngo ON ngo_staff (ngo_id, is_active);
 CREATE INDEX idx_operations_ngo ON operation_assignments (ngo_id, status, scheduled_at);
 CREATE INDEX idx_operations_donation ON operation_assignments (donation_id, created_at);
 CREATE INDEX idx_operations_staff ON operation_assignments (staff_id, scheduled_at);
+CREATE UNIQUE INDEX uq_active_operation_per_donation_task
+    ON operation_assignments (donation_id, task_type)
+    WHERE status IN ('scheduled', 'in_progress');

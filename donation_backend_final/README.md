@@ -99,6 +99,7 @@ For an existing database, apply the additive migrations in order:
 ```powershell
 psql "$env:DATABASE_URL" -f migrations/001_milestone6_notifications.sql
 psql "$env:DATABASE_URL" -f migrations/002_milestone6_staff_operations.sql
+psql "$env:DATABASE_URL" -f migrations/003_active_operation_guard.sql
 ```
 
 ## Running the backend
@@ -233,7 +234,9 @@ NGO and must be active and assigned to the matching task type.
 Operation statuses are `scheduled`, `in_progress`, `completed`, and
 `cancelled`. The backend validates NGO ownership, staff role, active state,
 legal status transitions, overlapping assignments, and exact pickup time
-matching. The validated `staff_id` is passed to the ORM exactly once.
+matching. Only one `scheduled` or `in_progress` operation may exist for a
+donation and task type. Completed and cancelled records remain as history.
+The validated `staff_id` is passed to the ORM exactly once.
 
 ### Notifications and dashboards
 
