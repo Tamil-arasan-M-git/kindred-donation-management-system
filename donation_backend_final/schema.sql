@@ -66,8 +66,8 @@ CREATE TABLE item_submission_lines (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     submission_id       UUID NOT NULL REFERENCES item_submissions(id) ON DELETE CASCADE,
     class_name          VARCHAR(50) NOT NULL CHECK (class_name IN ('clothing', 'food', 'books', 'electronics', 'furniture', 'utensils')),   -- one of: clothing, food, books, electronics, furniture, utensils
-    quantity            INTEGER NOT NULL CHECK (quantity >= 0),
-    detection_confidence NUMERIC(4,3),          -- e.g. 0.812; NULL if manually added by donor
+    quantity            INTEGER NOT NULL CHECK (quantity >= 1),
+    detection_confidence NUMERIC(4,3) CHECK (detection_confidence IS NULL OR (detection_confidence >= 0 AND detection_confidence <= 1)),
     was_edited_by_donor BOOLEAN NOT NULL DEFAULT FALSE
 );
 
@@ -79,7 +79,7 @@ CREATE TABLE demand_records (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     ngo_id          UUID NOT NULL REFERENCES ngos(id) ON DELETE CASCADE,  -- tenant scope
     class_name      VARCHAR(50) NOT NULL,
-    quantity_needed INTEGER NOT NULL CHECK (quantity_needed >= 0),
+    quantity_needed INTEGER NOT NULL CHECK (quantity_needed >= 1),
     priority        SMALLINT NOT NULL DEFAULT 1 CHECK (priority BETWEEN 1 AND 5),
     expiry_date     DATE,                          -- demand no longer valid after this date
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -92,9 +92,18 @@ CREATE TABLE demand_records (
 -- ---------------------------------------------------------------------
 CREATE INDEX idx_submissions_ngo        ON item_submissions (ngo_id);
 CREATE INDEX idx_submissions_status     ON item_submissions (status);
+CREATE INDEX idx_submissions_donor      ON item_submissions (donor_id);
 CREATE INDEX idx_submission_lines_class ON item_submission_lines (class_name);
+CREATE INDEX idx_submission_lines_submission ON item_submission_lines (submission_id);
 CREATE INDEX idx_demand_ngo             ON demand_records (ngo_id);
 CREATE INDEX idx_demand_class           ON demand_records (class_name);
+CREATE INDEX idx_demand_expiry          ON demand_records (expiry_date);
+CREATE INDEX idx_users_email            ON users (email);
+CREATE INDEX idx_users_role             ON users (role);
+CREATE INDEX idx_users_donor_id         ON users (donor_id);
+CREATE INDEX idx_users_ngo_id           ON users (ngo_id);
+CREATE INDEX idx_ngos_verified          ON ngos (verified);
+CREATE INDEX idx_ngos_city              ON ngos (city);
 
 -- Milestone 2 account, audit, and matching tables. These statements are
 -- additive so existing Milestone 1 data remains intact.
@@ -114,7 +123,7 @@ CREATE TABLE status_history (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     submission_id UUID NOT NULL REFERENCES item_submissions(id) ON DELETE CASCADE,
     old_status VARCHAR(30),
-    new_status VARCHAR(30) NOT NULL,
+    new_status VARCHAR(30) NOT NULL CHECK (new_status IN ('submitted', 'matched', 'packaging_notified', 'pickup_scheduled', 'collected', 'delivered', 'acknowledged', 'cancelled')),
     changed_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
     changed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     notes VARCHAR(1000)

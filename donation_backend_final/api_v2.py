@@ -1,3 +1,4 @@
+import logging
 import math
 from datetime import date
 from uuid import UUID
@@ -6,26 +7,61 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from db import DemandRecord, DonationMatch, Donor, ItemSubmission, ItemSubmissionLine, NGO, StatusHistory, User, get_db
-from schemas import DemandCreate, DemandResponse, DonationCreate, NGOCreate, NGOResponse, NGOUpdate, LoginRequest, StatusUpdate, TokenResponse, UserRegister, UserResponse, VerificationRequest, CATEGORIES
+from schemas import DemandCreate, DemandResponse, DonationCreate, DonorResponse, NGOCreate, NGOResponse, NGOUpdate, LoginRequest, StatusUpdate, TokenResponse, UserRegister, UserResponse, VerificationRequest, CATEGORIES
 from security import create_access_token, get_current_user, hash_password, require_roles, verify_password
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["Milestone 2"])
 TRANSITIONS = {"submitted": {"matched", "cancelled"}, "matched": {"packaging_notified", "cancelled"}, "packaging_notified": {"pickup_scheduled", "cancelled"}, "pickup_scheduled": {"collected", "cancelled"}, "collected": {"delivered"}, "delivered": {"acknowledged"}, "acknowledged": set(), "cancelled": set()}
 
+
+def validate_pagination(limit: int, offset: int, max_limit: int = 100):
+    if limit <= 0:
+        raise HTTPException(status_code=400, detail="limit must be greater than 0")
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="offset must be greater than or equal to 0")
+    if limit > max_limit:
+        raise HTTPException(status_code=400, detail=f"limit cannot exceed {max_limit}")
+    return limit, offset
+
 def require_owner(user: User, ngo_id: UUID | None = None, donor_id: UUID | None = None):
-    if user.role == "admin":
-        return
     if user.role == "ngo" and ngo_id and user.ngo_id == ngo_id:
         return
     if user.role == "donor" and donor_id and user.donor_id == donor_id:
         return
     raise HTTPException(status_code=403, detail="You do not own this resource")
 
+
+def require_admin(user: User):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+
+def require_ngo_or_admin(user: User, ngo_id: UUID | None):
+    if user.role == "admin":
+        return
+    if user.role == "ngo" and ngo_id and user.ngo_id == ngo_id:
+        return
+    raise HTTPException(status_code=403, detail="You do not have access to this NGO resource")
+
+
+def require_match_action_permission(user: User, match_ngo_id: UUID | None):
+    if user.role == "admin":
+        return
+    if user.role != "ngo":
+        raise HTTPException(status_code=403, detail="Only the assigned NGO or admin can perform this action")
+    if match_ngo_id is None or user.ngo_id != match_ngo_id:
+        raise HTTPException(status_code=403, detail="You cannot perform this action for another NGO")
+
+
 def donation_view(donation: ItemSubmission):
     return {"id": str(donation.id), "donor_id": str(donation.donor_id) if donation.donor_id else None, "ngo_id": str(donation.ngo_id) if donation.ngo_id else None, "status": donation.status, "created_at": donation.created_at.isoformat() if donation.created_at else None, "items": [{"class_name": line.class_name, "quantity": line.quantity, "confidence": float(line.detection_confidence) if line.detection_confidence is not None else None, "was_edited_by_donor": line.was_edited_by_donor} for line in donation.lines]}
 
 @router.post("/auth/register", response_model=UserResponse, tags=["Authentication"])
 def register(request: UserRegister, db: Session = Depends(get_db)):
+    if request.role == "admin":
+        raise HTTPException(status_code=403, detail="Admin accounts cannot be created through the public registration endpoint")
     if db.query(User).filter(User.email == request.email.lower()).first():
         raise HTTPException(status_code=409, detail="Email is already registered")
     donor_id = None
@@ -59,10 +95,11 @@ def create_ngo(request: NGOCreate, db: Session = Depends(get_db), user: User = D
 
 @router.get("/ngos", response_model=list[NGOResponse], tags=["NGOs"])
 def list_ngos(city: str | None = None, verified: bool | None = None, limit: int = 50, offset: int = 0, db: Session = Depends(get_db)):
+    limit, offset = validate_pagination(limit, offset)
     query = db.query(NGO)
     if city: query = query.filter(NGO.city == city)
     if verified is not None: query = query.filter(NGO.verified == verified)
-    return query.order_by(NGO.created_at.desc()).offset(offset).limit(min(limit, 100)).all()
+    return query.order_by(NGO.created_at.desc()).offset(offset).limit(limit).all()
 
 @router.get("/ngos/{ngo_id}", response_model=NGOResponse, tags=["NGOs"])
 def get_ngo(ngo_id: UUID, db: Session = Depends(get_db)):
@@ -91,13 +128,16 @@ def create_demand(ngo_id: UUID, request: DemandCreate, db: Session = Depends(get
     demand = DemandRecord(ngo_id=ngo_id, **request.model_dump()); db.add(demand); db.commit(); db.refresh(demand); return demand
 
 @router.get("/ngos/{ngo_id}/demands", response_model=list[DemandResponse], tags=["Demands"])
-def list_demands(ngo_id: UUID, active_only: bool = False, class_name: str | None = None, priority: int | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    require_owner(user, ngo_id=ngo_id)
+def list_demands(ngo_id: UUID, active_only: bool = False, class_name: str | None = None, priority: int | None = None, limit: int = 50, offset: int = 0, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    ngo = db.get(NGO, ngo_id)
+    if not ngo: raise HTTPException(status_code=404, detail="NGO not found")
+    limit, offset = validate_pagination(limit, offset)
+    require_ngo_or_admin(user, ngo_id)
     query = db.query(DemandRecord).filter(DemandRecord.ngo_id == ngo_id)
     if active_only: query = query.filter(DemandRecord.quantity_needed > 0).filter((DemandRecord.expiry_date.is_(None)) | (DemandRecord.expiry_date >= date.today()))
     if class_name: query = query.filter(DemandRecord.class_name == class_name)
     if priority is not None: query = query.filter(DemandRecord.priority == priority)
-    return query.order_by(DemandRecord.priority.desc()).all()
+    return query.order_by(DemandRecord.priority.desc(), DemandRecord.created_at.desc()).offset(offset).limit(limit).all()
 
 @router.get("/demands/{demand_id}", response_model=DemandResponse, tags=["Demands"])
 def get_demand(demand_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -129,17 +169,20 @@ def deactivate_ngo(ngo_id: UUID, db: Session = Depends(get_db), user: User = Dep
 
 @router.post("/donations", tags=["Donations"])
 def create_donation(request: DonationCreate, db: Session = Depends(get_db), user: User = Depends(require_roles("donor"))):
+    if not user.donor_id:
+        raise HTTPException(status_code=403, detail="This donor account is not linked to a donor record")
     donation = ItemSubmission(donor_id=user.donor_id, status="submitted"); db.add(donation); db.flush()
     for item in request.items: db.add(ItemSubmissionLine(submission_id=donation.id, class_name=item.class_name, quantity=item.quantity, detection_confidence=item.confidence))
     db.add(StatusHistory(submission_id=donation.id, new_status="submitted", changed_by_user_id=user.id, notes="Donation created")); db.commit(); db.refresh(donation); return donation_view(donation)
 
 @router.get("/donations", tags=["Donations"])
 def list_donations(status: str | None = None, limit: int = 50, offset: int = 0, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    limit, offset = validate_pagination(limit, offset)
     query = db.query(ItemSubmission)
     if user.role == "donor": query = query.filter(ItemSubmission.donor_id == user.donor_id)
     if user.role == "ngo": query = query.filter(ItemSubmission.ngo_id == user.ngo_id)
     if status: query = query.filter(ItemSubmission.status == status)
-    return [donation_view(item) for item in query.order_by(ItemSubmission.created_at.desc()).offset(offset).limit(min(limit, 100)).all()]
+    return [donation_view(item) for item in query.order_by(ItemSubmission.created_at.desc(), ItemSubmission.id.desc()).offset(offset).limit(limit).all()]
 
 @router.get("/donations/{donation_id}", tags=["Donations"])
 def get_donation(donation_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -154,7 +197,8 @@ def update_donation(donation_id: UUID, request: DonationCreate, db: Session = De
     require_owner(user, donor_id=donation.donor_id)
     if donation.status != "submitted": raise HTTPException(status_code=409, detail="Only submitted donations can be edited")
     donation.lines.clear()
-    for item in request.items: db.add(ItemSubmissionLine(submission_id=donation.id, class_name=item.class_name, quantity=item.quantity, detection_confidence=item.confidence, was_edited_by_donor=True))
+    for item in request.items:
+        db.add(ItemSubmissionLine(submission_id=donation.id, class_name=item.class_name, quantity=item.quantity, detection_confidence=item.confidence, was_edited_by_donor=True))
     db.commit(); db.refresh(donation); return donation_view(donation)
 
 @router.post("/donations/{donation_id}/cancel", tags=["Donation Status"])
@@ -188,7 +232,8 @@ def match_donation(donation_id: UUID, db: Session = Depends(get_db), user: User 
     donation = db.get(ItemSubmission, donation_id)
     if not donation: raise HTTPException(status_code=404, detail="Donation not found")
     require_owner(user, donor_id=donation.donor_id)
-    if donation.status == "cancelled": raise HTTPException(status_code=409, detail="Cancelled donations cannot be matched")
+    if donation.status in {"cancelled", "matched", "acknowledged"}:
+        raise HTTPException(status_code=409, detail="This donation is no longer eligible for new matching")
     donor = db.get(Donor, donation.donor_id) if donation.donor_id else None
     candidates = []
     for line in donation.lines:
@@ -215,7 +260,11 @@ def get_matches(donation_id: UUID, db: Session = Depends(get_db), user: User = D
 def accept_match(match_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     match = db.get(DonationMatch, match_id)
     if not match: raise HTTPException(status_code=404, detail="Match not found")
-    require_owner(user, donor_id=match.submission.donor_id, ngo_id=match.ngo_id)
+    require_match_action_permission(user, match.ngo_id)
+    if match.submission.status == "cancelled": raise HTTPException(status_code=409, detail="Cancelled donations cannot accept new matches")
+    existing_accepted = db.query(DonationMatch).filter(DonationMatch.submission_id == match.submission_id, DonationMatch.status == "accepted", DonationMatch.id != match.id).first()
+    if existing_accepted:
+        raise HTTPException(status_code=409, detail="Another NGO has already accepted this donation")
     if match.status not in {"candidate", "recommended"}: raise HTTPException(status_code=409, detail="Match is no longer available")
     for competing in match.submission.matches:
         if competing.id != match.id and competing.status in {"candidate", "recommended"}: competing.status = "rejected"
@@ -223,7 +272,7 @@ def accept_match(match_id: UUID, db: Session = Depends(get_db), user: User = Dep
     if match.submission.status == "submitted":
         match.submission.status = "matched"
         db.add(StatusHistory(submission_id=match.submission.id, old_status="submitted", new_status="matched", changed_by_user_id=user.id, notes="Match accepted"))
-    db.commit(); return {"match_id": str(match.id), "status": match.status, "donation": donation_view(match.submission)}
+    db.commit(); db.refresh(match); db.refresh(match.submission); return {"match_id": str(match.id), "status": match.status, "donation": donation_view(match.submission)}
 
 @router.get("/matches/{match_id}", tags=["Matching"])
 def get_match(match_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -236,15 +285,26 @@ def get_match(match_id: UUID, db: Session = Depends(get_db), user: User = Depend
 def reject_match(match_id: UUID, reason: str | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     match = db.get(DonationMatch, match_id)
     if not match: raise HTTPException(status_code=404, detail="Match not found")
-    require_owner(user, donor_id=match.submission.donor_id, ngo_id=match.ngo_id)
+    require_match_action_permission(user, match.ngo_id)
+    if match.submission.status == "cancelled": raise HTTPException(status_code=409, detail="Cancelled donations cannot reject matches")
+    if match.status in {"accepted", "rejected"}: raise HTTPException(status_code=409, detail="This match is no longer changeable")
     match.status = "rejected"; match.rejection_reason = reason; db.commit()
     return {"match_id": str(match.id), "status": match.status, "reason": match.rejection_reason}
 
 @router.get("/ngos/{ngo_id}/matches", tags=["Matching"])
 def list_ngo_matches(ngo_id: UUID, status: str | None = None, limit: int = 50, offset: int = 0, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not db.get(NGO, ngo_id): raise HTTPException(status_code=404, detail="NGO not found")
-    require_owner(user, ngo_id=ngo_id)
+    ngo = db.get(NGO, ngo_id)
+    if not ngo: raise HTTPException(status_code=404, detail="NGO not found")
+    limit, offset = validate_pagination(limit, offset)
+    require_ngo_or_admin(user, ngo_id)
     query = db.query(DonationMatch).filter(DonationMatch.ngo_id == ngo_id)
     if status: query = query.filter(DonationMatch.status == status)
-    matches = query.order_by(DonationMatch.score.desc()).offset(offset).limit(min(limit, 100)).all()
+    matches = query.order_by(DonationMatch.created_at.desc(), DonationMatch.id.desc()).offset(offset).limit(limit).all()
     return [{"id": str(match.id), "donation": donation_view(match.submission), "score": float(match.score), "status": match.status, "created_at": match.created_at.isoformat() if match.created_at else None} for match in matches]
+
+@router.get("/admin/donors", response_model=list[DonorResponse], tags=["Admin"])
+def list_admin_donors(limit: int = 50, offset: int = 0, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_admin(user)
+    limit, offset = validate_pagination(limit, offset)
+    donors = db.query(Donor).order_by(Donor.id).offset(offset).limit(limit).all()
+    return donors

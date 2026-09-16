@@ -1,5 +1,6 @@
 
 import io
+import logging
 import uuid
 from collections import defaultdict
 
@@ -12,6 +13,8 @@ from fastapi import (
 )
 
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.datastructures import Headers
 
 from pydantic import BaseModel
 
@@ -28,18 +31,33 @@ from db import (
     ItemSubmissionLine
 )
 from api_v2 import router as milestone2_router
-from config import CORS_ALLOWED_ORIGINS, CUSTOM_MODEL_PATH, USE_CUSTOM_MODEL
+from config import CORS_ALLOWED_ORIGINS, CUSTOM_MODEL_PATH, MAX_UPLOAD_BYTES, USE_CUSTOM_MODEL
 
 
 # ============================================================
 # FASTAPI
 # ============================================================
 
+logger = logging.getLogger("kindred.backend")
+logging.basicConfig(level=logging.INFO)
+
 app = FastAPI(
     title="Donation Platform API",
     version="1.0.0"
 )
 app.include_router(milestone2_router)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc: HTTPException):
+    logger.warning("HTTP %s for %s: %s", exc.status_code, request.url.path, exc.detail)
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request, exc: Exception):
+    logger.exception("Unhandled exception for %s", request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 # ============================================================
@@ -53,6 +71,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 
 # ============================================================
@@ -163,9 +192,16 @@ async def detect_items(file: UploadFile = File(...)):
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Please upload an image")
 
+    filename = (file.filename or "").lower()
+    allowed_extensions = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
+    if not filename or not any(filename.endswith(ext) for ext in allowed_extensions):
+        raise HTTPException(status_code=400, detail="Unsupported image format")
+
     image_bytes = await file.read()
     if not image_bytes:
         raise HTTPException(status_code=400, detail="Empty image")
+    if len(image_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Image is too large")
 
     try:
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -174,8 +210,9 @@ async def detect_items(file: UploadFile = File(...)):
 
     try:
         results = model.predict(source=image, conf=0.25, iou=0.45, verbose=False)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI detection failed: {str(e)}")
+    except Exception:
+        logger.exception("AI detection failed for uploaded image")
+        raise HTTPException(status_code=500, detail="AI detection failed")
 
     detected_items = defaultdict(lambda: {"quantity": 0, "confidences": []})
 

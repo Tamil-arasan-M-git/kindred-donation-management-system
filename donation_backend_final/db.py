@@ -104,7 +104,11 @@ class ItemSubmissionLine(Base):
     detection_confidence = Column(Numeric(4, 3))
     was_edited_by_donor = Column(Boolean, nullable=False, default=False)
 
-    __table_args__ = (CheckConstraint("quantity >= 0", name="quantity_non_negative"), CheckConstraint("class_name IN ('clothing', 'food', 'books', 'electronics', 'furniture', 'utensils')", name="submission_category_valid"))
+    __table_args__ = (
+        CheckConstraint("quantity >= 1", name="quantity_positive"),
+        CheckConstraint("detection_confidence IS NULL OR (detection_confidence >= 0 AND detection_confidence <= 1)", name="confidence_range_valid"),
+        CheckConstraint("class_name IN ('clothing', 'food', 'books', 'electronics', 'furniture', 'utensils')", name="submission_category_valid"),
+    )
     submission = relationship("ItemSubmission", back_populates="lines")
 
 
@@ -118,7 +122,11 @@ class DemandRecord(Base):
     expiry_date = Column(Date)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    __table_args__ = (CheckConstraint("quantity_needed >= 0", name="quantity_needed_non_negative"), CheckConstraint("priority BETWEEN 1 AND 5", name="demand_priority_valid"), CheckConstraint("class_name IN ('clothing', 'food', 'books', 'electronics', 'furniture', 'utensils')", name="demand_category_valid"))
+    __table_args__ = (
+        CheckConstraint("quantity_needed >= 1", name="quantity_needed_positive"),
+        CheckConstraint("priority BETWEEN 1 AND 5", name="demand_priority_valid"),
+        CheckConstraint("class_name IN ('clothing', 'food', 'books', 'electronics', 'furniture', 'utensils')", name="demand_category_valid"),
+    )
     ngo = relationship("NGO", back_populates="demands")
 
 
@@ -131,6 +139,8 @@ class StatusHistory(Base):
     changed_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
     changed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     notes = Column(String(1000))
+
+    __table_args__ = (CheckConstraint("new_status IN ('submitted', 'matched', 'packaging_notified', 'pickup_scheduled', 'collected', 'delivered', 'acknowledged', 'cancelled')", name="status_history_status_valid"),)
     submission = relationship("ItemSubmission", back_populates="status_history")
 
 

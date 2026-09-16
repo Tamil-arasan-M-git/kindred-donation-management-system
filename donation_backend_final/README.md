@@ -171,8 +171,19 @@ $env:DATABASE_URL = "postgresql://your_user:your_password@localhost:5432/donatio
 
 For Milestone 2, copy `.env.example` to `.env` and set at least
 `DATABASE_URL` and a long random `JWT_SECRET_KEY`. The API loads these
-settings at startup; `.env` is ignored by Git. Apply the additive tables in
-`schema.sql` to an existing development database rather than dropping data.
+settings at startup; `.env` is ignored by Git. You can also configure
+`JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `CORS_ALLOWED_ORIGINS`,
+`USE_CUSTOM_MODEL`, `CUSTOM_MODEL_PATH`, and `MAX_UPLOAD_BYTES`.
+
+`MAX_UPLOAD_BYTES` defaults to 10 MiB. The `/detect` endpoint accepts only
+PNG, JPG/JPEG, BMP, and WebP uploads. The API also adds basic security
+headers and returns generic 500 responses while logging the detailed server
+exception locally.
+
+Apply the additive tables and constraint changes in `schema.sql` to an
+existing development database using a migration process; do not drop data.
+The current database rules require donation and demand quantities to be at
+least 1, and detection confidence values must be between 0 and 1 when present.
 
 Milestone 2 authenticated routes are grouped under `/api`: authentication,
 NGO and demand management, donor donations, audited status transitions, and
@@ -221,7 +232,7 @@ Send the returned token on protected requests as
 
 | Method | Endpoint             | What it does                                                                                                                          | Access        |
 | ------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| `POST` | `/api/auth/register` | Creates a donor, NGO, or admin account and securely hashes the password. Donor and NGO accounts are linked to their ownership record. | Public        |
+| `POST` | `/api/auth/register` | Creates a donor or NGO account and securely hashes the password. Donor and NGO accounts are linked to their ownership record; admin accounts cannot be created publicly. | Public        |
 | `POST` | `/api/auth/login`    | Checks credentials and returns a JWT access token plus basic user information.                                                        | Public        |
 | `GET`  | `/api/auth/me`       | Returns the currently authenticated user's ID, email, role, and active status.                                                        | Authenticated |
 
@@ -236,6 +247,24 @@ Send the returned token on protected requests as
 | `PATCH`  | `/api/ngos/{ngo_id}/verification` | Approves or removes an NGO's verified status.                                                            | Admin              |
 | `DELETE` | `/api/ngos/{ngo_id}`              | Deactivates an NGO by un-verifying it and disabling its NGO users without deleting historical donations. | Admin              |
 
+### Admin donor registry
+
+The donor registry is available only to authenticated admin users. Send the
+JWT returned by `/api/auth/login` as `Authorization: Bearer <access_token>`.
+
+| Method | Endpoint | What it does | Access |
+| ------ | -------- | ------------ | ------ |
+| `GET` | `/api/admin/donors` | Lists donor records ordered by donor ID. Supports `limit` and `offset`; `limit` must be between 1 and 100. | Admin |
+
+Example:
+
+```bash
+curl -H "Authorization: Bearer <admin_access_token>" \
+  "http://localhost:8000/api/admin/donors?limit=50&offset=0"
+```
+
+Unauthenticated or non-admin requests receive `401` or `403` respectively.
+
 ### NGO demand registry
 
 Supported categories are `clothing`, `food`, `books`, `electronics`,
@@ -244,7 +273,7 @@ Supported categories are `clothing`, `food`, `books`, `electronics`,
 | Method   | Endpoint                     | What it does                                                                                                                                  | Access             |
 | -------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
 | `POST`   | `/api/ngos/{ngo_id}/demands` | Creates an NGO demand with category, quantity, priority, and optional expiry date.                                                            | NGO owner or admin |
-| `GET`    | `/api/ngos/{ngo_id}/demands` | Lists demands with optional `active_only`, `class_name`, and `priority` filters. Active demands have quantity above zero and are not expired. | NGO owner or admin |
+| `GET`    | `/api/ngos/{ngo_id}/demands` | Lists demands with optional `active_only`, `class_name`, `priority`, `limit`, and `offset` filters. Active demands have quantity above zero and are not expired. | NGO owner or admin |
 | `GET`    | `/api/demands/{demand_id}`   | Returns one demand after checking NGO ownership.                                                                                              | NGO owner or admin |
 | `PUT`    | `/api/demands/{demand_id}`   | Updates a demand's category, quantity, priority, or expiry date.                                                                              | NGO owner or admin |
 | `DELETE` | `/api/demands/{demand_id}`   | Deletes a demand.                                                                                                                             | NGO owner or admin |

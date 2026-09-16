@@ -10,7 +10,7 @@ STATUSES = {"submitted", "matched", "packaging_notified", "pickup_scheduled", "c
 class UserRegister(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
-    role: Literal["donor", "ngo", "admin"]
+    role: Literal["donor", "ngo"]
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -22,6 +22,8 @@ class UserResponse(BaseModel):
     email: EmailStr
     role: str
     is_active: bool
+    donor_id: UUID | None = None
+    ngo_id: UUID | None = None
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -46,12 +48,21 @@ class NGOResponse(NGOCreate):
     verified: bool
     created_at: datetime | None = None
 
+class DonorResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    name: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    city: str | None = None
+    created_at: datetime | None = None
+
 class VerificationRequest(BaseModel):
     verified: bool
 
 class DemandCreate(BaseModel):
     class_name: str
-    quantity_needed: int = Field(ge=0)
+    quantity_needed: int = Field(gt=0)
     priority: int = Field(ge=1, le=5)
     expiry_date: date | None = None
     @model_validator(mode="after")
@@ -68,7 +79,7 @@ class DemandResponse(DemandCreate):
 
 class DonationItemRequest(BaseModel):
     class_name: str
-    quantity: int = Field(ge=0)
+    quantity: int = Field(gt=0)
     confidence: float | None = Field(default=None, ge=0, le=1)
     @model_validator(mode="after")
     def validate_category(self):
