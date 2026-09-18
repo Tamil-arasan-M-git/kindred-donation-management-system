@@ -77,47 +77,6 @@ Its own class names are used directly. `inference_pipeline.py` is the
 reusable version of this pipeline; it uses confidence `0.35`, IoU `0.45`, and
 flags aggregate confidence below `0.50` for donor review.
 
-## Database and configuration
-
-The application uses PostgreSQL through SQLAlchemy. Copy `.env.example` to
-`.env` and configure at least:
-
-```env
-DATABASE_URL=postgresql://username:password@localhost:5432/donation_platform
-JWT_SECRET_KEY=replace-with-a-long-random-secret
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=60
-```
-
-Other settings include `CORS_ALLOWED_ORIGINS`, `USE_CUSTOM_MODEL`,
-`CUSTOM_MODEL_PATH`, `MAX_UPLOAD_BYTES`, SMTP settings, and optional Twilio
-settings. In-app notifications are stored in PostgreSQL; external delivery is
-best-effort.
-
-For an existing database, apply the additive migrations in order:
-
-```powershell
-psql "$env:DATABASE_URL" -f migrations/001_milestone6_notifications.sql
-psql "$env:DATABASE_URL" -f migrations/002_milestone6_staff_operations.sql
-psql "$env:DATABASE_URL" -f migrations/003_active_operation_guard.sql
-```
-
-## Running the backend
-
-```powershell
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn main:app --reload --host 0.0.0.0 --port 8000 --access-log
-```
-
-Interactive documentation is available at `/docs`, `/redoc`, and
-`/openapi.json`. Protected routes use:
-
-```text
-Authorization: Bearer <access_token>
-```
-
 ## API reference
 
 ### Legacy public AI and submission APIs
@@ -251,18 +210,3 @@ the stored operation status remains available in `operation_status`.
 | `PATCH` | `/api/notifications/read-all` | Marks all owned notifications as read. | Authenticated |
 | `GET` | `/api/donors/me/dashboard` | Returns donor counts, active matches, pickup status, impact, and activity. | Donor |
 | `GET` | `/api/ngos/me/dashboard` | Returns NGO demand, match, donation, operation, and activity metrics. | NGO |
-
-## Validation and response behavior
-
-- Supported categories: `clothing`, `food`, `books`, `electronics`,
-  `furniture`, and `utensils`.
-- Quantities must be positive; confidence values must be between 0 and 1.
-- Pagination limits are 1-100 with a non-negative offset.
-- Invalid request data returns `422`.
-- Missing or invalid authentication returns `401`; insufficient permissions
-  return `403`.
-- Workflow conflicts, invalid transitions, schedule conflicts, and duplicate
-  staff email return `409` where applicable.
-- Uvicorn and application middleware log successful requests and failures.
-- CORS is configured through `CORS_ALLOWED_ORIGINS`; do not use a wildcard
-  origin as an authentication workaround.
