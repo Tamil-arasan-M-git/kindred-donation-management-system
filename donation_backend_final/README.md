@@ -236,7 +236,11 @@ Operation statuses are `scheduled`, `in_progress`, `completed`, and
 legal status transitions, overlapping assignments, and exact pickup time
 matching. Only one `scheduled` or `in_progress` operation may exist for a
 donation and task type. Completed and cancelled records remain as history.
-The validated `staff_id` is passed to the ORM exactly once.
+The validated `staff_id` is passed to the ORM exactly once. Operation
+responses include nested `staff`, the stored `operation_status`, the related
+`donation_status`, and the display `status`. When a donation reaches
+`acknowledged`, its operation display status is reported as `completed` while
+the stored operation status remains available in `operation_status`.
 
 ### Notifications and dashboards
 

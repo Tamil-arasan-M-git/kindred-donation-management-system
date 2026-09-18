@@ -99,6 +99,14 @@ def staff_view(staff: NGOStaff):
 
 
 def operation_view(operation: OperationAssignment):
+    # Acknowledged donations are fully completed from the
+    # business/lifecycle perspective, so their NGO operation
+    # should also be displayed as completed.
+    display_status = (
+        "completed"
+        if operation.donation and operation.donation.status == "acknowledged"
+        else operation.status
+    )
     return {
         "id": str(operation.id),
         "donation_id": str(operation.donation_id),
@@ -106,12 +114,13 @@ def operation_view(operation: OperationAssignment):
         "staff": staff_view(operation.staff),
         "task_type": operation.task_type,
         "scheduled_at": operation.scheduled_at.isoformat() if operation.scheduled_at else None,
-        "status": operation.status,
+        "status": display_status,
+        "operation_status": operation.status,
+        "donation_status": operation.donation.status if operation.donation else None,
         "notes": operation.notes,
         "created_at": operation.created_at.isoformat() if operation.created_at else None,
         "updated_at": operation.updated_at.isoformat() if operation.updated_at else None,
     }
-
 
 def validate_staff_for_task(db: Session, staff_id: UUID, ngo_id: UUID, task_type: str, require_active: bool = True):
     staff = db.get(NGOStaff, staff_id)
@@ -753,7 +762,10 @@ def ngo_dashboard(db: Session = Depends(get_db), user: User = Depends(get_curren
     pending_packaging = operations.filter(OperationAssignment.task_type == "packaging", OperationAssignment.status.in_(["scheduled", "in_progress"])).count()
     pending_deliveries = operations.filter(OperationAssignment.task_type == "delivery", OperationAssignment.status.in_(["scheduled", "in_progress"])).count()
     unassigned_tasks = db.query(ItemSubmission).filter(ItemSubmission.ngo_id == ngo_id, ItemSubmission.status.in_(["matched", "packaging_notified", "pickup_scheduled", "collected"])).filter(~ItemSubmission.operations.any(OperationAssignment.status.in_(["scheduled", "in_progress"]))).count()
-    completed_operations = operations.filter(OperationAssignment.status == "completed").count()
+    completed_operations = operations.join(ItemSubmission).filter(
+    (OperationAssignment.status == "completed")
+    | (ItemSubmission.status == "acknowledged")
+).count()
     activity = recent_activity(db.query(StatusHistory).join(ItemSubmission).filter(ItemSubmission.ngo_id == ngo_id))
     return {"active_demands": active_demands_query.count(), "incoming_matches": matches.filter(DonationMatch.status.in_(["candidate", "recommended"])).count(), "accepted_matches": matches.filter(DonationMatch.status == "accepted").count(), "pending_matches": matches.filter(DonationMatch.status.in_(["candidate", "recommended"])).count(), "active_donations": active_donations, "pending_packaging": pending_packaging, "todays_pickups": today_pickups, "pending_deliveries": pending_deliveries, "unassigned_tasks": unassigned_tasks, "completed_operations": completed_operations, "recent_activity": activity, "demand_summary": [{"class_name": demand.class_name, "quantity_needed": demand.quantity_needed} for demand in active_demands_query.order_by(DemandRecord.priority.desc(), DemandRecord.created_at.desc()).all()]}
 
