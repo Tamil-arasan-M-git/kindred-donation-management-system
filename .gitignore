@@ -1,20 +1,13 @@
+.env
+.env.*
+!.env.example
+
 venv/
 __pycache__/
-<<<<<<< HEAD
 *.py[cod]
+*.cache
 
-raw_datasets/
-dataset_unified/
-label_preview/
-runs/
+# Local model files and generated training artifacts
+*.pt
 weights/
-
-.env
-*.db
-*.sqlite
-*.sqlite3
-=======
-*.pyc
 runs/
-weights/clip/ViT-B-32.pt
->>>>>>> upload-temp
