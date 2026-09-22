@@ -66,6 +66,7 @@ CREATE TABLE item_submission_lines (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     submission_id       UUID NOT NULL REFERENCES item_submissions(id) ON DELETE CASCADE,
     class_name          VARCHAR(50) NOT NULL CHECK (class_name IN ('clothing', 'food', 'books', 'electronics', 'furniture', 'utensils')),   -- one of: clothing, food, books, electronics, furniture, utensils
+    subcategory         VARCHAR(50),
     quantity            INTEGER NOT NULL CHECK (quantity >= 1),
     detection_confidence NUMERIC(4,3) CHECK (detection_confidence IS NULL OR (detection_confidence >= 0 AND detection_confidence <= 1)),
     was_edited_by_donor BOOLEAN NOT NULL DEFAULT FALSE
@@ -79,6 +80,7 @@ CREATE TABLE demand_records (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     ngo_id          UUID NOT NULL REFERENCES ngos(id) ON DELETE CASCADE,  -- tenant scope
     class_name      VARCHAR(50) NOT NULL,
+    subcategory     VARCHAR(50),
     quantity_needed INTEGER NOT NULL CHECK (quantity_needed >= 1),
     priority        SMALLINT NOT NULL DEFAULT 1 CHECK (priority BETWEEN 1 AND 5),
     expiry_date     DATE,                          -- demand no longer valid after this date
