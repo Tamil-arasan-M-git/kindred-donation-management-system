@@ -33,6 +33,7 @@ from db import (
 )
 from api_v2 import router as milestone2_router
 from config import CORS_ALLOWED_ORIGINS, CUSTOM_MODEL_PATH, MAX_UPLOAD_BYTES, USE_CUSTOM_MODEL
+from taxonomy import taxonomy_for_class
 
 
 # ============================================================
@@ -147,12 +148,23 @@ CATEGORY_MAP = {
 print(f"Loading model (USE_CUSTOM_MODEL={USE_CUSTOM_MODEL})...")
 
 if USE_CUSTOM_MODEL:
-    model = YOLO(CUSTOM_MODEL_PATH)
-    # Fine-tuned model's own class names ARE the category names already
-    # (from target_classes.py), so this map is just identity — kept so
-    # the lookup code below doesn't need an if/else branch.
-    CATEGORY_MAP = {name: name for name in model.names.values()}
+    from pathlib import Path
+    custom_model_path = Path(CUSTOM_MODEL_PATH)
+    if not custom_model_path.is_file() and not custom_model_path.is_absolute():
+        project_relative_path = Path(__file__).resolve().parent.parent / custom_model_path
+        if project_relative_path.is_file():
+            custom_model_path = project_relative_path
+    if not custom_model_path.is_file():
+        raise RuntimeError(f"USE_CUSTOM_MODEL=true but CUSTOM_MODEL_PATH is not a regular file: {custom_model_path}")
+    model = YOLO(str(custom_model_path))
+    # The custom model's own names are authoritative; taxonomy.py maps them
+    # to the application's parent category and subcategory.
     print(f"Loaded custom fine-tuned model. Classes: {list(model.names.values())}")
+    if model.task != "detect":
+        raise RuntimeError(f"Custom model must be an object detection model; got task={model.task!r}")
+    if not model.names:
+        raise RuntimeError("Custom model has no class names")
+    logger.info("Loaded custom model | Path: %s | Task: %s | Classes: %s", custom_model_path, model.task, list(model.names.values()))
 else:
     model = YOLOWorld("yolov8s-world.pt")
     model.set_classes(DETECTION_CLASSES)
@@ -165,6 +177,8 @@ else:
 
 class DonationItem(BaseModel):
     class_name: str
+    category: str | None = None
+    subcategory: str | None = None
     quantity: int
     confidence: float | None = None
     needs_review: bool = False
@@ -233,7 +247,7 @@ async def detect_items(file: UploadFile = File(...)):
         logger.exception("AI detection failed for uploaded image")
         raise HTTPException(status_code=500, detail="AI detection failed")
 
-    detected_items = defaultdict(lambda: {"quantity": 0, "confidences": []})
+    detected_items = defaultdict(lambda: {"quantity": 0, "confidences": [], "class_name": None, "category": None, "subcategory": None, "unknown": False})
 
     for result in results:
         if result.boxes is None:
@@ -243,25 +257,42 @@ async def detect_items(file: UploadFile = File(...)):
             confidence = float(box.conf[0])
             detected_name = model.names[class_id].lower().strip()
 
-            category = CATEGORY_MAP.get(detected_name)
-            if category is None:
+            if USE_CUSTOM_MODEL:
+                taxonomy = taxonomy_for_class(detected_name)
+            else:
+                category = CATEGORY_MAP.get(detected_name)
+                taxonomy = {"category": category, "subcategory": None, "known": category is not None}
+
+            if not taxonomy["known"] or taxonomy["category"] is None:
+                logger.warning("Unknown model class returned by detector: %s", detected_name)
+                key = (detected_name, None)
+                detected_items[key]["quantity"] += 1
+                detected_items[key]["confidences"].append(confidence)
+                detected_items[key]["unknown"] = True
                 continue
 
-            detected_items[category]["quantity"] += 1
-            detected_items[category]["confidences"].append(confidence)
+            key = (taxonomy["category"], taxonomy["subcategory"] if USE_CUSTOM_MODEL else None)
+            detected_items[key]["quantity"] += 1
+            detected_items[key]["confidences"].append(confidence)
+            detected_items[key]["class_name"] = detected_name
+            detected_items[key]["category"] = taxonomy["category"]
+            detected_items[key]["subcategory"] = taxonomy["subcategory"]
 
     items = []
-    for class_name, data in detected_items.items():
+    for (class_name, subcategory), data in detected_items.items():
         quantity = data["quantity"]
         confidences = data["confidences"]
         average_confidence = (sum(confidences) / len(confidences)) if confidences else 0
         needs_review = average_confidence < 0.50
 
         items.append({
-            "class": class_name,
+            "class": data["category"] or class_name,
+            "class_name": data["class_name"] or class_name,
+            "category": data["category"],
+            "subcategory": data["subcategory"] if USE_CUSTOM_MODEL else None,
             "quantity": quantity,
             "confidence": round(average_confidence, 3),
-            "needs_review": needs_review,
+            "needs_review": needs_review or data["unknown"],
         })
 
     items.sort(key=lambda x: x["confidence"], reverse=True)
@@ -314,7 +345,8 @@ def create_submission(request: SubmissionRequest, db: Session = Depends(get_db))
 
         line = ItemSubmissionLine(
             submission_id=submission.id,
-            class_name=item.class_name,
+            class_name=item.category or item.class_name,
+            subcategory=item.subcategory,
             quantity=item.quantity,
             detection_confidence=item.confidence,
             was_edited_by_donor=False,

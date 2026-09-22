@@ -15,12 +15,13 @@ donation_backend_final/
 ├── security.py                     Password hashing, JWT, and role checks
 ├── config.py                       Environment configuration
 ├── inference_pipeline.py           Reusable fine-tuned YOLOv8 pipeline
+├── taxonomy.py                      Central model-class to category/subcategory normalization
 ├── target_classes.py               Canonical donation categories
 ├── status_service.py               Donation status transitions and permissions
 ├── packaging_service.py            Category-specific packaging checklists
 ├── notification_service.py         In-app, email, and optional Twilio delivery
 ├── schema.sql                      Complete PostgreSQL schema
-├── migrations/                     Additive Milestone 6 migrations
+├── migrations/                      Additive Milestone 6 and subcategory migrations
 ├── requirements.txt                Python dependencies
 ├── .env.example                    Environment variable template
 ├── train.py                        Fine-tunes the custom YOLOv8 model
@@ -61,8 +62,9 @@ Detected objects are mapped into six platform categories:
 | `utensils` | bottle, water bottle, cup, plate, bowl, utensil |
 
 The `/detect` route runs inference with confidence `0.25` and IoU `0.45`.
-Results are grouped by category, quantities are estimated by counting
-detection boxes, and average confidence below `0.50` sets `needs_review=true`.
+YOLO-World results are grouped by category; custom-model results remain
+separate by fine-grained class. Quantities are estimated by counting detection
+boxes, and average confidence below `0.50` sets `needs_review=true`.
 
 ### Optional custom model
 
@@ -72,10 +74,20 @@ With `USE_CUSTOM_MODEL=true`, the backend loads `CUSTOM_MODEL_PATH`, normally:
 runs/detect/donation_items_yolov8n/weights/best.pt
 ```
 
-This is the fine-tuned YOLOv8 model trained for the six platform categories.
-Its own class names are used directly. `inference_pipeline.py` is the
-reusable version of this pipeline; it uses confidence `0.35`, IoU `0.45`, and
-flags aggregate confidence below `0.50` for donor review.
+This is the fine-grained YOLOv8 detection model at
+`runs/detect/donation_items_yolov8n/weights/best.pt`. Its 21 classes are:
+
+```text
+shirt, pants, dress, shoe, bag, other_clothing, food, books,
+phone, laptop, tv, other_electronics, chair, table, sofa,
+other_furniture, cup, plate, bowl, bottle, other_utensils
+```
+
+`taxonomy.py` is the single normalization layer: each model class is returned
+as its parent platform category plus a subcategory. Unknown classes are kept
+out of database category fields and are marked for donor review. The reusable
+`inference_pipeline.py` uses confidence `0.35`, IoU `0.45`, and flags
+aggregate confidence below `0.50` for donor review.
 
 ## API reference
 
@@ -88,7 +100,7 @@ available for compatibility.
 | --- | --- | --- |
 | `GET` | `/` | Confirms that the API is running. |
 | `GET` | `/health` | Returns health status and the active model name. |
-| `POST` | `/detect` | Accepts an image and returns detected categories, quantities, confidence, and review flags. |
+| `POST` | `/detect` | Accepts an image and returns legacy `class` plus `class_name`, parent `category`, optional `subcategory`, quantity, confidence, and review flags. Custom-model items remain separated by fine-grained class; YOLO-World retains category aggregation. |
 | `POST` | `/submissions` | Saves the reviewed legacy cart as a submitted donation. |
 | `GET` | `/submissions` | Lists legacy submissions. |
 | `GET` | `/submissions/{submission_id}` | Returns one legacy submission and its item lines. |
@@ -119,7 +131,7 @@ available for compatibility.
 | `PUT` | `/api/ngos/{ngo_id}` | Updates NGO profile and location. | NGO owner/admin |
 | `PATCH` | `/api/ngos/{ngo_id}/verification` | Verifies or un-verifies an NGO. | Admin |
 | `DELETE` | `/api/ngos/{ngo_id}` | Deactivates an NGO and its users without deleting history. | Admin |
-| `POST` | `/api/ngos/{ngo_id}/demands` | Creates a category demand with quantity, priority, and optional expiry. | NGO owner/admin |
+| `POST` | `/api/ngos/{ngo_id}/demands` | Creates a category demand with optional subcategory, quantity, priority, and expiry. | NGO owner/admin |
 | `GET` | `/api/ngos/{ngo_id}/demands` | Lists demands with active/category/priority filters. | NGO owner/admin |
 | `GET` | `/api/demands/{demand_id}` | Returns one demand. | NGO owner/admin |
 | `PUT` | `/api/demands/{demand_id}` | Updates a demand. | NGO owner/admin |
@@ -129,7 +141,7 @@ available for compatibility.
 
 | Method | Endpoint | Description | Access |
 | --- | --- | --- | --- |
-| `POST` | `/api/donations` | Creates a donation with one or more categorized item lines. | Donor |
+| `POST` | `/api/donations` | Creates a donation with one or more categorized item lines; each line may include a taxonomy-valid subcategory. | Donor |
 | `GET` | `/api/donations` | Lists donations filtered by role, status, limit, and offset. | Authenticated |
 | `GET` | `/api/donations/{donation_id}` | Returns donation details, items, NGO, matches, pickup time, and history. | Owner/NGO/admin |
 | `PUT` | `/api/donations/{donation_id}` | Replaces item lines while the donation is submitted. | Donor owner |
@@ -147,9 +159,10 @@ submitted -> matched -> packaging_notified -> pickup_scheduled
 ### Matching APIs
 
 Matching uses category, quantity fit, NGO demand priority, and geographic
-distance when coordinates are available. Results include explainable score
-components; semantic similarity is not used unless an embedding service is
-added later.
+distance when coordinates are available. A demand with a subcategory matches
+that exact subcategory; a category-only demand remains compatible with all
+subcategories in its category. Results include explainable score components;
+semantic similarity is not used unless an embedding service is added later.
 
 | Method | Endpoint | Description | Access |
 | --- | --- | --- | --- |

@@ -12,6 +12,7 @@ from db import DemandRecord, DonationMatch, Donor, ItemSubmission, ItemSubmissio
 from notification_service import EVENTS, notify_users
 from packaging_service import get_packaging_checklist
 from schemas import DemandCreate, DemandResponse, DonationCreate, DonorResponse, DonorUpdate, NGOCreate, NGOResponse, NGOUpdate, LoginRequest, OperationCreate, OperationUpdate, PickupScheduleRequest, StaffCreate, StaffResponse, StaffUpdate, StatusUpdate, TokenResponse, UserRegister, UserResponse, VerificationRequest, CATEGORIES
+from taxonomy import subcategories_compatible
 from security import create_access_token, get_current_user, hash_password, require_roles, verify_password
 from status_service import STATUS_TRANSITIONS, validate_status_action, validate_transition
 
@@ -151,7 +152,7 @@ def donation_view(donation: ItemSubmission, include_history: bool = False):
         "status": donation.status,
         "pickup_scheduled_at": donation.pickup_scheduled_at.isoformat() if donation.pickup_scheduled_at else None,
         "created_at": donation.created_at.isoformat() if donation.created_at else None,
-        "items": [{"class_name": line.class_name, "quantity": line.quantity, "confidence": float(line.detection_confidence) if line.detection_confidence is not None else None, "was_edited_by_donor": line.was_edited_by_donor} for line in donation.lines],
+        "items": [{"class_name": line.class_name, "subcategory": line.subcategory, "quantity": line.quantity, "confidence": float(line.detection_confidence) if line.detection_confidence is not None else None, "was_edited_by_donor": line.was_edited_by_donor} for line in donation.lines],
         "matches": [{"id": str(match.id), "ngo_id": str(match.ngo_id), "ngo_name": match.ngo.name if match.ngo else None, "score": float(match.score), "status": match.status} for match in sorted(donation.matches, key=lambda item: item.score, reverse=True)],
     }
     if include_history:
@@ -548,7 +549,7 @@ def create_donation(request: DonationCreate, db: Session = Depends(get_db), user
     if not user.donor_id:
         raise HTTPException(status_code=403, detail="This donor account is not linked to a donor record")
     donation = ItemSubmission(donor_id=user.donor_id, status="submitted"); db.add(donation); db.flush()
-    for item in request.items: db.add(ItemSubmissionLine(submission_id=donation.id, class_name=item.class_name, quantity=item.quantity, detection_confidence=item.confidence))
+    for item in request.items: db.add(ItemSubmissionLine(submission_id=donation.id, class_name=item.class_name, subcategory=item.subcategory, quantity=item.quantity, detection_confidence=item.confidence))
     db.add(StatusHistory(submission_id=donation.id, new_status="submitted", changed_by_user_id=user.id, notes="Donation created")); db.commit(); db.refresh(donation); return donation_view(donation)
 
 @router.get("/donations", tags=["Donations"])
@@ -574,7 +575,7 @@ def update_donation(donation_id: UUID, request: DonationCreate, db: Session = De
     if donation.status != "submitted": raise HTTPException(status_code=409, detail="Only submitted donations can be edited")
     donation.lines.clear()
     for item in request.items:
-        db.add(ItemSubmissionLine(submission_id=donation.id, class_name=item.class_name, quantity=item.quantity, detection_confidence=item.confidence, was_edited_by_donor=True))
+        db.add(ItemSubmissionLine(submission_id=donation.id, class_name=item.class_name, subcategory=item.subcategory, quantity=item.quantity, detection_confidence=item.confidence, was_edited_by_donor=True))
     db.commit(); db.refresh(donation); return donation_view(donation)
 
 @router.post("/donations/{donation_id}/cancel", tags=["Donation Status"])
@@ -783,6 +784,7 @@ def match_donation(donation_id: UUID, db: Session = Depends(get_db), user: User 
     candidates = []
     for line in donation.lines:
         demands = db.query(DemandRecord).join(NGO).filter(DemandRecord.class_name == line.class_name, DemandRecord.quantity_needed > 0, (DemandRecord.expiry_date.is_(None)) | (DemandRecord.expiry_date >= date.today()), NGO.verified.is_(True)).all()
+        demands = [demand for demand in demands if subcategories_compatible(line.subcategory, demand.subcategory)]
         for demand in demands:
             distance_score = 0.5; distance_text = "Location data unavailable"
             if donor and donor.latitude is not None and donor.longitude is not None and demand.ngo.latitude is not None and demand.ngo.longitude is not None:

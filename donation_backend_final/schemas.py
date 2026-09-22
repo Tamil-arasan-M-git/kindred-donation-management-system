@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
+from taxonomy import normalize_item
+
 CATEGORIES = {"clothing", "food", "books", "electronics", "furniture", "utensils"}
 STATUSES = {"submitted", "matched", "packaging_notified", "pickup_scheduled", "collected", "delivered", "acknowledged", "cancelled"}
 
@@ -96,13 +98,15 @@ class VerificationRequest(BaseModel):
 
 class DemandCreate(BaseModel):
     class_name: str
+    subcategory: str | None = None
     quantity_needed: int = Field(gt=0)
     priority: int = Field(ge=1, le=5)
     expiry_date: date | None = None
     @model_validator(mode="after")
     def validate_category(self):
-        if self.class_name not in CATEGORIES:
-            raise ValueError("Unsupported item category")
+        normalized = normalize_item(self.class_name, self.subcategory)
+        self.class_name = normalized["category"]
+        self.subcategory = normalized["subcategory"]
         return self
 
 class DemandResponse(DemandCreate):
@@ -113,12 +117,14 @@ class DemandResponse(DemandCreate):
 
 class DonationItemRequest(BaseModel):
     class_name: str
+    subcategory: str | None = None
     quantity: int = Field(gt=0)
     confidence: float | None = Field(default=None, ge=0, le=1)
     @model_validator(mode="after")
     def validate_category(self):
-        if self.class_name not in CATEGORIES:
-            raise ValueError("Unsupported item category")
+        normalized = normalize_item(self.class_name, self.subcategory)
+        self.class_name = normalized["category"]
+        self.subcategory = normalized["subcategory"]
         return self
 
 class DonationCreate(BaseModel):
