@@ -1,0 +1,40 @@
+:root {
+  font-family: "DM Sans", "Segoe UI", sans-serif;
+  letter-spacing: 0.01em;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #1d2b1d;
+  background: #f6f1e7;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+  min-height: 100vh;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid rgba(217, 119, 75, 0.48);
+  outline-offset: 3px;
+}
