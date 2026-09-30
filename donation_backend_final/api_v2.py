@@ -432,9 +432,10 @@ def ensure_no_active_operation_for_donation_task(db: Session, donation_id: UUID,
 def notify_operation_event(db: Session, donation: ItemSubmission, task_type: str, status: str, user_id=None):
     event_type = {
         ("packaging", "scheduled"): "PACKAGING_SCHEDULED",
+        ("packaging", "completed"): "PACKAGING_COMPLETED",
         ("pickup", "scheduled"): "PICKUP_SCHEDULED",
-        ("delivery", "scheduled"): "DELIVERY_SCHEDULED",
         ("pickup", "completed"): "PICKUP_COMPLETED",
+        ("delivery", "scheduled"): "DELIVERY_SCHEDULED",
         ("delivery", "completed"): "DELIVERY_COMPLETED",
     }.get((task_type, status))
     if event_type:
