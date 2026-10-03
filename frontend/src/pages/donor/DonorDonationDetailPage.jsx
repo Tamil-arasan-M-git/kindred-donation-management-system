@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import api from "../../api/client";
 import StatusBadge from "../../components/common/StatusBadge";
 import DonorShell from "./DonorShell";
@@ -7,8 +8,12 @@ import DonationStatusTimeline from "../../components/donations/DonationStatusTim
 import DonationActions from "../../components/donations/DonationActions";
 import PackagingChecklist from "../../components/donations/PackagingChecklist";
 import PickupScheduler from "../../components/donations/PickupScheduler";
+import { formatDonationItem } from "./donorUtils";
+import DonorPageHeaderArtwork from "./DonorPageHeaderArtwork";
+import "./DonorDonationDetailPage.css";
 
 export default function DonorDonationDetailPage() {
+  const { t, i18n } = useTranslation();
   const { id } = useParams();
   const [donation, setDonation] = useState(null);
   const [history, setHistory] = useState([]);
@@ -35,10 +40,7 @@ export default function DonorDonationDetailPage() {
   }, [id]);
 
   useEffect(() => {
-    loadDonation()
-      .catch((err) =>
-        setError(err.message || "Donation details could not be loaded."),
-      );
+    loadDonation().catch(() => setError(t("donor.journey.loadError")));
   }, [loadDonation]);
 
   const generateMatches = async () => {
@@ -46,7 +48,7 @@ export default function DonorDonationDetailPage() {
 
     setIsGeneratingMatches(true);
     setError("");
-    setNotice("Finding suitable NGOs...");
+    setNotice(t("donor.journey.findingSuitableNgos"));
 
     try {
       const response = await api.generateMatches(id);
@@ -54,19 +56,18 @@ export default function DonorDonationDetailPage() {
       setMatches(nextMatches);
       setNotice(
         nextMatches.length
-          ? `Matches found: ${nextMatches.length}`
-          : "No suitable NGO matches were found yet.",
+          ? t("donor.journey.matchesFound", { count: nextMatches.length })
+          : t("donor.journey.noSuitableMatches"),
       );
-    } catch (err) {
-      setError(err.message || "Matches could not be generated.");
+    } catch {
+      setError(t("donor.journey.matchesError"));
     } finally {
       setIsGeneratingMatches(false);
     }
   };
 
   const cancelDonation = async () => {
-    if (!window.confirm("Cancel this donation? This action cannot be undone."))
-      return;
+    if (!window.confirm(t("donor.journey.cancelConfirm"))) return;
     setCancelling(true);
     setError("");
     setNotice("");
@@ -74,9 +75,9 @@ export default function DonorDonationDetailPage() {
       const cancelledDonation = await api.cancelDonation(id);
       setDonation(cancelledDonation);
       await loadDonation();
-      setNotice("Your donation was cancelled.");
-    } catch (err) {
-      setError(err.message || "The donation could not be cancelled.");
+      setNotice(t("donor.journey.cancelledSuccess"));
+    } catch {
+      setError(t("donor.journey.cancelError"));
     } finally {
       setCancelling(false);
     }
@@ -86,105 +87,147 @@ export default function DonorDonationDetailPage() {
     <DonorShell>
       <div className="page-header">
         <div>
-          <p className="eyebrow">Donation detail</p>
-          <h1>Donation journey</h1>
+          <p className="eyebrow">{t("donor.journey.eyebrow")}</p>
+          <h1>{t("donor.journey.title")}</h1>
         </div>
+        <DonorPageHeaderArtwork />
       </div>
       {error ? <div className="error-box">{error}</div> : null}
       {notice ? <div className="success-box">{notice}</div> : null}
       {!donation && !error ? (
-        <div className="empty-state">Loading donation details...</div>
+        <div className="empty-state">{t("donor.journey.loading")}</div>
       ) : null}
       {donation ? (
-        <>
-          <div className="info-card wide-card">
-            <StatusBadge status={donation.status} />
-            <p>
-              {donation.items
-                .map((item) => `${item.class_name} x${item.quantity}`)
-                .join(", ")}
-            </p>
-            <DonationActions donation={donation} />
-            {[
-              "submitted",
-              "matched",
-              "packaging_notified",
-              "pickup_scheduled",
-            ].includes(donation.status) ? (
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={cancelDonation}
-                disabled={cancelling}
-              >
-                {cancelling ? "Cancelling..." : "Cancel donation"}
-              </button>
-            ) : null}
-          </div>
-          <div className="info-card wide-card timeline-card">
-            <h2>Status</h2>
-            <DonationStatusTimeline status={donation.status} history={history} />
-          </div>
-          { ["matched", "packaging_notified"].includes(donation.status) ? (
-            <div className="info-card wide-card" id="packaging">
-              <h2>Prepare your donation</h2>
-              <PackagingChecklist
-                donation={donation}
-                onReady={handlePackagingReady}
-              />
-              {donation.status === "packaging_notified" && packagingReady ? (
-                <div id="pickup" className="inline-section">
-                  <h3>Schedule pickup</h3>
-                  <PickupScheduler
-                    donation={donation}
-                    onScheduled={async () => {
-                      await loadDonation();
-                      setNotice("Pickup scheduled successfully.");
-                    }}
-                  />
-                </div>
+        <div className="donor-journey-layout">
+          <div className="donor-journey-main">
+            <div className="info-card wide-card">
+              <StatusBadge status={donation.status} />
+              {(donation.items || []).map((item, index) => (
+                <p key={`${item.class_name}-${index}`}>
+                  {formatDonationItem(item, t)}
+                  {item.confidence == null
+                    ? ` | ${t("donor.journey.confidenceUnavailable")}`
+                    : ` | ${t("donor.journey.aiConfidence", { value: Math.round(item.confidence * 100) })}`}
+                  {item.was_edited_by_donor
+                    ? ` | ${t("donor.review.reviewedByDonor")}`
+                    : ""}
+                </p>
+              ))}
+              <DonationActions donation={donation} />
+              {[
+                "submitted",
+                "matched",
+                "packaging_notified",
+                "pickup_scheduled",
+              ].includes(donation.status) ? (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={cancelDonation}
+                  disabled={cancelling}
+                >
+                  {cancelling
+                    ? t("donor.journey.cancelling")
+                    : t("donor.journey.cancelDonation")}
+                </button>
               ) : null}
             </div>
-          ) : null}
-          <div className="info-card wide-card">
-            <div className="section-heading">
-              <h2>NGO matches</h2>
-              <button
-                type="button"
-                className="primary-button small-button"
-                onClick={generateMatches}
-                disabled={isGeneratingMatches}
-              >
-                {isGeneratingMatches ? "Finding Matches..." : "Find matches"}
-              </button>
+            <div className="info-card wide-card timeline-card">
+              <h2>{t("donor.journey.status")}</h2>
+              <DonationStatusTimeline
+                status={donation.status}
+                history={history}
+              />
             </div>
-            {!matches.length ? (
-              <p className="muted-text">
-                No matches are available yet. Find matches to ask the backend
-                for ranked recommendations.
-              </p>
-            ) : null}
-            {matches.map((match) => (
-              <div key={match.id} className="match-row">
-                <div>
-                  <strong>{match.ngo_name || match.ngo?.name || "NGO"}</strong>
-                  <p>
-                    {typeof match.score === "number"
-                      ? `${Math.round(match.score * 100)}% match`
-                      : "Recommendation available"}
-                    {match.explanation?.[0]
-                      ? ` · ${match.explanation[0]}`
-                      : " · Rule-based compatibility"}
-                  </p>
-                </div>
-                <div className="action-stack inline-actions">
-                  <StatusBadge status={match.status || "candidate"} />
-                </div>
+            {["matched", "packaging_notified"].includes(donation.status) ? (
+              <div className="info-card wide-card" id="packaging">
+                <h2>{t("donor.journey.prepareDonation")}</h2>
+                <PackagingChecklist
+                  donation={donation}
+                  onReady={handlePackagingReady}
+                />
+                {donation.status === "packaging_notified" && packagingReady ? (
+                  <div id="pickup" className="inline-section">
+                    <h3>{t("donor.journey.schedulePickup")}</h3>
+                    <PickupScheduler
+                      donation={donation}
+                      onScheduled={async () => {
+                        await loadDonation();
+                        setNotice(t("donor.journey.pickupSuccess"));
+                      }}
+                    />
+                  </div>
+                ) : null}
               </div>
-            ))}
+            ) : null}
+            <div className="info-card wide-card">
+              <div className="section-heading">
+                <h2>{t("donor.journey.ngoMatches")}</h2>
+                <button
+                  type="button"
+                  className="primary-button small-button"
+                  onClick={generateMatches}
+                  disabled={isGeneratingMatches}
+                >
+                  {isGeneratingMatches
+                    ? t("donor.journey.findingMatches")
+                    : t("donor.journey.findMatches")}
+                </button>
+              </div>
+              {!matches.length ? (
+                <p className="muted-text">{t("donor.journey.noMatchesHint")}</p>
+              ) : null}
+              {matches.map((match) => (
+                <div key={match.id} className="match-row">
+                  <div>
+                    <strong>
+                      {match.ngo_name ||
+                        match.ngo?.name ||
+                        t("donor.journey.ngoFallback")}
+                    </strong>
+                    {(
+                      match.requirements ||
+                      (match.required_category
+                        ? [
+                            {
+                              category: match.required_category,
+                              subcategory: match.required_subcategory,
+                              quantity_needed: match.required_quantity,
+                            },
+                          ]
+                        : [])
+                    ).map((demand, index) => (
+                      <p key={`${demand.category}-${index}`}>
+                        {t("donor.journey.required")}:{" "}
+                        {t(
+                          `categories.${String(demand.category || "").toLowerCase()}`,
+                          { defaultValue: demand.category },
+                        )}
+                        {demand.subcategory
+                          ? ` / ${t(`categories.${String(demand.subcategory).toLowerCase()}`, { defaultValue: demand.subcategory })}`
+                          : ` / ${t("donor.journey.anySubcategory")}`}{" "}
+                        | {t("donor.journey.quantity")}:{" "}
+                        {demand.quantity_needed}
+                      </p>
+                    ))}
+                    <p>
+                      {typeof match.score === "number"
+                        ? t("donor.journey.matchPercent", {
+                            value: Math.round(match.score * 100),
+                          })
+                        : t("donor.journey.recommendationAvailable")}
+                      {` | ${t("donor.journey.ruleCompatibility")}`}
+                    </p>
+                  </div>
+                  <div className="action-stack inline-actions">
+                    <StatusBadge status={match.status || "candidate"} />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="info-card wide-card timeline-card">
-            <h2>Status history</h2>
+          <aside className="donor-journey-history info-card timeline-card">
+            <h2>{t("donor.journey.statusHistory")}</h2>
             {history.length ? (
               history.map((event, index) => (
                 <div
@@ -194,17 +237,19 @@ export default function DonorDonationDetailPage() {
                   <StatusBadge status={event.new_status} />
                   <span>
                     {event.changed_at
-                      ? new Date(event.changed_at).toLocaleString()
+                      ? new Date(event.changed_at).toLocaleString(
+                          i18n.resolvedLanguage,
+                        )
                       : ""}
                   </span>
                   {event.notes ? <p>{event.notes}</p> : null}
                 </div>
               ))
             ) : (
-              <p className="muted-text">No status history is available.</p>
+              <p className="muted-text">{t("donor.journey.noStatusHistory")}</p>
             )}
-          </div>
-        </>
+          </aside>
+        </div>
       ) : null}
     </DonorShell>
   );

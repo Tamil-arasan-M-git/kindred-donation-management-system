@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import ProtectedRoute from "./ProtectedRoute";
 import LoginPage from "../pages/auth/LoginPage";
 import RegisterPage from "../pages/auth/RegisterPage";
+import HomePage from "../pages/home/HomePage";
 import DonorDashboard from "../pages/donor/DonorDashboard";
 import DonorScanPage from "../pages/donor/DonorScanPage";
 import DonorReviewPage from "../pages/donor/DonorReviewPage";
@@ -74,7 +75,7 @@ export default function AppRoutes() {
         <Route path="/admin/demands" element={<AdminDemandsPage />} />
         <Route path="/admin/matches" element={<AdminMatchesPage />} />
       </Route>
-      <Route path="/" element={<Navigate to={destination} replace />} />
+      <Route path="/" element={<HomePage />} />
       <Route path="*" element={<Navigate to={destination} replace />} />
     </Routes>
   );

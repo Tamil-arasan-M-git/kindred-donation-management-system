@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
-from taxonomy import normalize_item
+from taxonomy import normalize_item, normalize_model_class
 
 CATEGORIES = {"clothing", "food", "books", "electronics", "furniture", "utensils"}
 STATUSES = {"submitted", "matched", "packaging_notified", "pickup_scheduled", "collected", "delivered", "acknowledged", "cancelled"}
@@ -117,15 +117,53 @@ class DemandResponse(DemandCreate):
 
 class DonationItemRequest(BaseModel):
     class_name: str
+    category: str | None = None
     subcategory: str | None = None
     quantity: int = Field(gt=0)
     confidence: float | None = Field(default=None, ge=0, le=1)
+
     @model_validator(mode="after")
     def validate_category(self):
-        normalized = normalize_item(self.class_name, self.subcategory)
-        self.class_name = normalized["category"]
+        # Resolve known model classes such as "book", "sofa", "chair", etc.
+        model_taxonomy = normalize_model_class(self.class_name)
+
+        if model_taxonomy:
+            expected_category = model_taxonomy["category"]
+            expected_subcategory = model_taxonomy["subcategory"]
+
+            if self.category is not None:
+                supplied_category = self.category.strip().lower()
+
+                # Allow the model class itself as the category.
+                # Example: "book" -> "books"
+                supplied_taxonomy = normalize_model_class(supplied_category)
+
+                if supplied_taxonomy:
+                    supplied_category = supplied_taxonomy["category"]
+
+                if supplied_category != expected_category:
+                    raise ValueError("Category does not match item class")
+
+            if self.subcategory is not None:
+                if self.subcategory.strip().lower() != expected_subcategory:
+                    raise ValueError("Subcategory does not match item class")
+
+            self.category = expected_category
+            self.subcategory = expected_subcategory
+            return self
+
+        # Allow category-only submissions such as:
+        # class_name="furniture", category="furniture"
+        normalized = normalize_item(
+            self.category or self.class_name,
+            self.subcategory,
+        )
+
+        self.category = normalized["category"]
+        self.class_name = normalized["subcategory"] or normalized["category"]
         self.subcategory = normalized["subcategory"]
         return self
+
 
 class DonationCreate(BaseModel):
     items: list[DonationItemRequest] = Field(min_length=1)

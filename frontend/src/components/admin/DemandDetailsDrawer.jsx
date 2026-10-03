@@ -1,0 +1,35 @@
+import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import "./DemandDetailsDrawer.css";
+
+const formatDate = (value, locale, options = {}) => {
+  if (!value) return "N/A";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "N/A" : new Intl.DateTimeFormat(locale, options).format(date);
+};
+const initials = (value) => String(value || "NG").split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+
+export default function DemandDetailsDrawer({ demand, ngo, onClose }) {
+  const { t, i18n } = useTranslation();
+  const closeButtonRef = useRef(null);
+  const [tab, setTab] = useState("overview");
+  const locale = i18n.resolvedLanguage || undefined;
+  const needed = Number(demand?.quantity_needed) || 0;
+  const fulfilled = Number(demand?.quantity_fulfilled) || 0;
+  const remaining = Math.max(0, Number(demand?.quantity_remaining ?? needed) || 0);
+  const percentage = needed > 0 ? Math.min(100, Math.max(0, (fulfilled / needed) * 100)) : 0;
+  const priorityKey = { 1: "low", 2: "belowAverage", 3: "normal", 4: "high", 5: "urgent" }[demand?.priority] || "normal";
+  const status = demand?.fulfillment_status || "active";
+  const statusLabel = t(`admin.demands.status${status === "partially_fulfilled" ? "PartiallyFulfilled" : status.charAt(0).toUpperCase() + status.slice(1)}`, { defaultValue: status });
+
+  useEffect(() => {
+    if (!demand) return undefined;
+    const onKeyDown = (event) => { if (event.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKeyDown);
+    closeButtonRef.current?.focus();
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [demand, onClose]);
+  if (!demand) return null;
+
+  return <div className="admin-demand-drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="admin-demand-drawer" role="dialog" aria-modal="true" aria-labelledby="admin-demand-details-title"><header className="admin-demand-drawer-header"><h2 id="admin-demand-details-title">{t("admin.demandDetails.title", { defaultValue: "Demand Details" })}</h2><button ref={closeButtonRef} type="button" onClick={onClose} aria-label={t("common.close", { defaultValue: "Close" })}><i className="fi fi-rr-cross-small" /></button></header><section className="admin-demand-drawer-ngo"><span>{initials(ngo?.name || demand.ngo_name)}</span><div><div className="admin-demand-ngo-heading"><h3>{ngo?.name || demand.ngo_name || t("admin.demandDetails.ngoUnavailable", { defaultValue: "NGO information unavailable" })}</h3>{ngo ? <span className={`admin-demand-ngo-status ${ngo.verified ? "verified" : "unverified"}`}><i />{ngo.verified ? t("admin.verified", { defaultValue: "Verified" }) : t("admin.unverified", { defaultValue: "Unverified" })}</span> : null}</div>{ngo?.email || ngo?.contact_email ? <p><i className="fi fi-rr-envelope" />{ngo.email || ngo.contact_email}</p> : null}{ngo?.city ? <p><i className="fi fi-rr-marker" />{ngo.city}</p> : null}</div></section><nav className="admin-demand-drawer-tabs"><button type="button" className={tab === "overview" ? "active" : ""} onClick={() => setTab("overview")}>{t("admin.demandDetails.overview", { defaultValue: "Overview" })}</button><button type="button" className={tab === "fulfillment" ? "active" : ""} onClick={() => setTab("fulfillment")}>{t("admin.demandDetails.fulfillment", { defaultValue: "Fulfillment" })}</button><button type="button" className={tab === "activity" ? "active" : ""} onClick={() => setTab("activity")}>{t("admin.demandDetails.activity", { defaultValue: "Activity" })}</button></nav><div className="admin-demand-drawer-content">{tab === "overview" ? <section className="admin-demand-detail-card"><h3><i className="fi fi-rr-document" />{t("admin.demandDetails.basicInformation", { defaultValue: "Basic Information" })}</h3><dl><div><dt>{t("admin.demandDetails.demandId", { defaultValue: "Demand ID" })}</dt><dd>{String(demand.id).slice(0, 8).toUpperCase()}</dd></div><div><dt>{t("admin.demandDetails.category", { defaultValue: "Category" })}</dt><dd>{demand.class_name}</dd></div><div><dt>{t("admin.demandDetails.subcategory", { defaultValue: "Subcategory" })}</dt><dd>{demand.subcategory || t("admin.demandDetails.notSpecified", { defaultValue: "Not specified" })}</dd></div><div><dt>{t("admin.demandDetails.quantityNeeded", { defaultValue: "Quantity Needed" })}</dt><dd>{needed}</dd></div><div><dt>{t("admin.demandDetails.quantityFulfilled", { defaultValue: "Quantity Fulfilled" })}</dt><dd>{fulfilled}</dd></div><div><dt>{t("admin.demandDetails.remaining", { defaultValue: "Remaining Quantity" })}</dt><dd>{remaining}</dd></div><div><dt>{t("admin.demandDetails.priority", { defaultValue: "Priority" })}</dt><dd><strong className="admin-demand-priority">{demand.priority} - {t(`ngo.demands.priorityLabels.${priorityKey}`, { defaultValue: priorityKey })}</strong></dd></div><div><dt>{t("admin.demandDetails.neededUntil", { defaultValue: "Needed Until" })}</dt><dd>{formatDate(demand.expiry_date, locale, { day: "2-digit", month: "long", year: "numeric" })}</dd></div><div><dt>{t("admin.demandDetails.status", { defaultValue: "Status" })}</dt><dd><span className={`admin-demand-status-badge status-${status}`}>{statusLabel}</span></dd></div><div><dt>{t("admin.demandDetails.createdOn", { defaultValue: "Created On" })}</dt><dd>{formatDate(demand.created_at, locale, { day: "2-digit", month: "long", year: "numeric" })}</dd></div></dl></section> : tab === "fulfillment" ? <section className="admin-demand-detail-card admin-demand-fulfillment-card"><header><h3><i className="fi fi-rr-box-open" />{t("admin.demandDetails.fulfillmentProgress", { defaultValue: "Fulfillment Progress" })}</h3><span>{Math.round(percentage)}% {t("admin.demandDetails.fulfilled", { defaultValue: "fulfilled" })}</span></header><div className="admin-demand-detail-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(percentage)} aria-label={`${Math.round(percentage)}% fulfilled`}><span style={{ width: `${percentage}%` }} /></div><div className="admin-demand-fulfillment-metrics"><div><strong>{fulfilled}</strong><small>{t("admin.demandDetails.fulfilled", { defaultValue: "Fulfilled" })}</small></div><div><strong>{remaining}</strong><small>{t("admin.demandDetails.remaining", { defaultValue: "Remaining" })}</small></div><div><strong>{needed}</strong><small>{t("admin.demandDetails.totalNeeded", { defaultValue: "Total Needed" })}</small></div></div><div className="admin-demand-fulfillment-status"><span>{t("admin.demandDetails.status", { defaultValue: "Status" })}</span><strong className={`admin-demand-status-badge status-${status}`}>{statusLabel}</strong></div></section> : <section className="admin-demand-detail-card admin-demand-activity-empty"><i className="fi fi-rr-time-past" /><h3>{t("admin.demandDetails.activity", { defaultValue: "Activity" })}</h3><p>{t("admin.demandDetails.noActivity", { defaultValue: "No activity history available." })}</p></section>}</div></aside></div>;
+}

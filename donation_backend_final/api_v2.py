@@ -12,7 +12,7 @@ from db import DemandRecord, DonationMatch, Donor, ItemSubmission, ItemSubmissio
 from notification_service import EVENTS, notify_users
 from packaging_service import get_packaging_checklist
 from schemas import DemandCreate, DemandResponse, DonationCreate, DonorResponse, DonorUpdate, NGOCreate, NGOResponse, NGOUpdate, LoginRequest, OperationCreate, OperationUpdate, PickupScheduleRequest, StaffCreate, StaffResponse, StaffUpdate, StatusUpdate, TokenResponse, UserRegister, UserResponse, VerificationRequest, CATEGORIES
-from taxonomy import subcategories_compatible
+from taxonomy import normalize_model_class, subcategories_compatible
 from security import create_access_token, get_current_user, hash_password, require_roles, verify_password
 from status_service import STATUS_TRANSITIONS, validate_status_action, validate_transition
 
@@ -152,7 +152,7 @@ def donation_view(donation: ItemSubmission, include_history: bool = False):
         "status": donation.status,
         "pickup_scheduled_at": donation.pickup_scheduled_at.isoformat() if donation.pickup_scheduled_at else None,
         "created_at": donation.created_at.isoformat() if donation.created_at else None,
-        "items": [{"class_name": line.class_name, "subcategory": line.subcategory, "quantity": line.quantity, "confidence": float(line.detection_confidence) if line.detection_confidence is not None else None, "was_edited_by_donor": line.was_edited_by_donor} for line in donation.lines],
+        "items": [{"class_name": line.class_name, "category": getattr(line, "category", None) or line.class_name, "subcategory": line.subcategory, "quantity": line.quantity, "confidence": float(line.detection_confidence) if line.detection_confidence is not None else None, "was_edited_by_donor": line.was_edited_by_donor} for line in donation.lines],
         "matches": [{"id": str(match.id), "ngo_id": str(match.ngo_id), "ngo_name": match.ngo.name if match.ngo else None, "score": float(match.score), "status": match.status} for match in sorted(donation.matches, key=lambda item: item.score, reverse=True)],
     }
     if include_history:
@@ -546,13 +546,57 @@ def update_operation(donation_id: UUID, assignment_id: UUID, request: OperationU
     return operation_view(operation)
 
 @router.post("/donations", tags=["Donations"])
-def create_donation(request: DonationCreate, db: Session = Depends(get_db), user: User = Depends(require_roles("donor"))):
+def create_donation(
+    request: DonationCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles("donor"))
+):
     if not user.donor_id:
-        raise HTTPException(status_code=403, detail="This donor account is not linked to a donor record")
-    donation = ItemSubmission(donor_id=user.donor_id, status="submitted"); db.add(donation); db.flush()
-    for item in request.items: db.add(ItemSubmissionLine(submission_id=donation.id, class_name=item.class_name, subcategory=item.subcategory, quantity=item.quantity, detection_confidence=item.confidence))
-    db.add(StatusHistory(submission_id=donation.id, new_status="submitted", changed_by_user_id=user.id, notes="Donation created")); db.commit(); db.refresh(donation); return donation_view(donation)
+        raise HTTPException(
+            status_code=403,
+            detail="This donor account is not linked to a donor record"
+        )
 
+    donation = ItemSubmission(
+        donor_id=user.donor_id,
+        status="submitted"
+    )
+    db.add(donation)
+    db.flush()
+
+    for item in request.items:
+        taxonomy = normalize_model_class(item.class_name)
+
+        category = (
+            item.category
+            if item.category
+            else taxonomy["category"]
+        )
+
+        db.add(
+            ItemSubmissionLine(
+                submission_id=donation.id,
+                class_name=item.class_name,
+                category=category,
+                subcategory=item.subcategory,
+                quantity=item.quantity,
+                detection_confidence=item.confidence
+            )
+        )
+
+    db.add(
+        StatusHistory(
+            submission_id=donation.id,
+            new_status="submitted",
+            changed_by_user_id=user.id,
+            notes="Donation created"
+        )
+    )
+
+    db.commit()
+    db.refresh(donation)
+
+    return donation_view(donation)
 @router.get("/donations", tags=["Donations"])
 def list_donations(status: str | None = None, limit: int = 50, offset: int = 0, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     limit, offset = validate_pagination(limit, offset)
@@ -576,7 +620,9 @@ def update_donation(donation_id: UUID, request: DonationCreate, db: Session = De
     if donation.status != "submitted": raise HTTPException(status_code=409, detail="Only submitted donations can be edited")
     donation.lines.clear()
     for item in request.items:
-        db.add(ItemSubmissionLine(submission_id=donation.id, class_name=item.class_name, subcategory=item.subcategory, quantity=item.quantity, detection_confidence=item.confidence, was_edited_by_donor=True))
+        taxonomy = normalize_model_class(item.class_name)
+        category = item.category if item.category else (taxonomy["category"] if taxonomy else item.class_name)
+        db.add(ItemSubmissionLine(submission_id=donation.id, class_name=item.class_name, category=category, subcategory=item.subcategory, quantity=item.quantity, detection_confidence=item.confidence, was_edited_by_donor=True))
     db.commit(); db.refresh(donation); return donation_view(donation)
 
 @router.post("/donations/{donation_id}/cancel", tags=["Donation Status"])
@@ -775,27 +821,254 @@ def haversine(lat1, lon1, lat2, lon2):
     radius = 6371.0; phi1, phi2 = math.radians(float(lat1)), math.radians(float(lat2)); dphi = math.radians(float(lat2 - lat1)); dlambda = math.radians(float(lon2 - lon1)); a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2; return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 @router.post("/donations/{donation_id}/match", tags=["Matching"])
-def match_donation(donation_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def match_donation(
+    donation_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
     donation = db.get(ItemSubmission, donation_id)
-    if not donation: raise HTTPException(status_code=404, detail="Donation not found")
+
+    if not donation:
+        raise HTTPException(
+            status_code=404,
+            detail="Donation not found"
+        )
+
     require_owner(user, donor_id=donation.donor_id)
+
     if donation.status != "submitted":
-        raise HTTPException(status_code=409, detail="Only submitted donations are eligible for new matching")
-    donor = db.get(Donor, donation.donor_id) if donation.donor_id else None
-    candidates = []
+        raise HTTPException(
+            status_code=409,
+            detail="Only submitted donations are eligible for new matching"
+        )
+
+    donor = (
+        db.get(Donor, donation.donor_id)
+        if donation.donor_id
+        else None
+    )
+
+    # Keep only ONE match per NGO.
+    # If the same NGO has multiple compatible demands,
+    # the highest-scoring demand will determine the match.
+    candidate_by_ngo = {}
+
+    # Load existing matches first.
+    existing_matches = {
+        match.ngo_id: match
+        for match in donation.matches
+    }
+
     for line in donation.lines:
-        demands = db.query(DemandRecord).join(NGO).filter(DemandRecord.class_name == line.class_name, DemandRecord.quantity_needed > 0, (DemandRecord.expiry_date.is_(None)) | (DemandRecord.expiry_date >= date.today()), NGO.verified.is_(True)).all()
-        demands = [demand for demand in demands if subcategories_compatible(line.subcategory, demand.subcategory)]
+
+        model_taxonomy = normalize_model_class(line.class_name)
+
+        donation_category = (
+            model_taxonomy["category"]
+            if model_taxonomy
+            else line.class_name
+        )
+
+        demands = (
+            db.query(DemandRecord)
+            .join(NGO)
+            .filter(
+                DemandRecord.class_name == donation_category,
+                DemandRecord.quantity_needed > 0,
+                (
+                    DemandRecord.expiry_date.is_(None)
+                    |
+                    (DemandRecord.expiry_date >= date.today())
+                ),
+                NGO.verified.is_(True)
+            )
+            .all()
+        )
+
+        # Apply subcategory compatibility
+        demands = [
+            demand
+            for demand in demands
+            if subcategories_compatible(
+                line.subcategory,
+                demand.subcategory
+            )
+        ]
+
         for demand in demands:
-            distance_score = 0.5; distance_text = "Location data unavailable"
-            if donor and donor.latitude is not None and donor.longitude is not None and demand.ngo.latitude is not None and demand.ngo.longitude is not None:
-                distance = haversine(donor.latitude, donor.longitude, demand.ngo.latitude, demand.ngo.longitude); distance_score = 1 / (1 + distance / 10); distance_text = f"approximately {distance:.1f} km away"
-            quantity_score = min(line.quantity / demand.quantity_needed, 1.0) if demand.quantity_needed else 0.0; priority_score = demand.priority / 5; score = .4 + .25 * quantity_score + .2 * distance_score + .15 * priority_score
-            match = db.query(DonationMatch).filter_by(submission_id=donation.id, ngo_id=demand.ngo_id).first()
-            if not match: match = DonationMatch(submission_id=donation.id, ngo_id=demand.ngo_id); db.add(match)
-            match.score, match.item_match_score, match.quantity_score, match.distance_score, match.priority_score = score, 1, quantity_score, distance_score, priority_score; match.status = "recommended"; candidates.append((score, match, line, demand, distance_text))
-    db.commit(); candidates.sort(key=lambda item: item[0], reverse=True)
-    return {"donation_id": str(donation.id), "matches": [{"id": str(match.id), "ngo_id": str(match.ngo_id), "ngo_name": demand.ngo.name, "score": round(score, 4), "item_match_score": 1, "quantity_score": round(match.quantity_score, 4), "distance_score": round(match.distance_score, 4), "priority_score": round(match.priority_score, 4), "semantic_score": None, "status": match.status, "explanation": [f"Exact item match: {line.class_name}", f"NGO needs {demand.quantity_needed} items and donation provides {line.quantity}", f"NGO priority: {demand.priority}/5", f"NGO is {distance_text}"]} for score, match, line, demand, distance_text in candidates]}
+
+            # -------------------------
+            # Distance calculation
+            # -------------------------
+            distance_score = 0.5
+            distance_text = "Location data unavailable"
+
+            if (
+                donor
+                and donor.latitude is not None
+                and donor.longitude is not None
+                and demand.ngo.latitude is not None
+                and demand.ngo.longitude is not None
+            ):
+                distance = haversine(
+                    donor.latitude,
+                    donor.longitude,
+                    demand.ngo.latitude,
+                    demand.ngo.longitude
+                )
+
+                distance_score = 1 / (1 + distance / 10)
+
+                distance_text = (
+                    f"approximately {distance:.1f} km away"
+                )
+
+            # -------------------------
+            # Quantity score
+            # -------------------------
+            quantity_score = (
+                min(
+                    line.quantity / demand.quantity_needed,
+                    1.0
+                )
+                if demand.quantity_needed
+                else 0.0
+            )
+
+            # -------------------------
+            # Priority score
+            # -------------------------
+            priority_score = demand.priority / 5
+
+            # -------------------------
+            # Overall score
+            # -------------------------
+            score = (
+                0.4
+                + 0.25 * quantity_score
+                + 0.2 * distance_score
+                + 0.15 * priority_score
+            )
+
+            ngo_id = demand.ngo_id
+
+            candidate = (
+                score,
+                line,
+                demand,
+                distance_text,
+                quantity_score,
+                distance_score,
+                priority_score
+            )
+
+            # Only keep the BEST demand for each NGO.
+            if (
+                ngo_id not in candidate_by_ngo
+                or score > candidate_by_ngo[ngo_id][0]
+            ):
+                candidate_by_ngo[ngo_id] = candidate
+
+    # -----------------------------------------
+    # Create/update exactly ONE match per NGO
+    # -----------------------------------------
+    candidates = []
+
+    for ngo_id, candidate in candidate_by_ngo.items():
+
+        (
+            score,
+            line,
+            demand,
+            distance_text,
+            quantity_score,
+            distance_score,
+            priority_score
+        ) = candidate
+
+        # Reuse an existing match if one already exists.
+        match = existing_matches.get(ngo_id)
+
+        if not match:
+            match = DonationMatch(
+                submission_id=donation.id,
+                ngo_id=ngo_id
+            )
+
+            db.add(match)
+
+            # Store immediately in cache so this NGO
+            # cannot receive another match during this request.
+            existing_matches[ngo_id] = match
+
+        match.score = score
+        match.item_match_score = 1
+        match.quantity_score = quantity_score
+        match.distance_score = distance_score
+        match.priority_score = priority_score
+        match.status = "recommended"
+        match.rejection_reason = None
+
+        candidates.append(
+            (
+                score,
+                match,
+                line,
+                demand,
+                distance_text
+            )
+        )
+
+    db.commit()
+
+    candidates.sort(
+        key=lambda item: item[0],
+        reverse=True
+    )
+
+    return {
+        "donation_id": str(donation.id),
+        "matches": [
+            {
+                "id": str(match.id),
+                "ngo_id": str(match.ngo_id),
+                "ngo_name": demand.ngo.name,
+                "score": round(score, 4),
+                "item_match_score": 1,
+                "quantity_score": round(
+                    match.quantity_score,
+                    4
+                ),
+                "distance_score": round(
+                    match.distance_score,
+                    4
+                ),
+                "priority_score": round(
+                    match.priority_score,
+                    4
+                ),
+                "semantic_score": None,
+                "status": match.status,
+                "explanation": [
+                    f"Exact item match: {line.class_name}",
+                    (
+                        f"NGO needs {demand.quantity_needed} "
+                        f"items and donation provides "
+                        f"{line.quantity}"
+                    ),
+                    f"NGO priority: {demand.priority}/5",
+                    f"NGO is {distance_text}"
+                ]
+            }
+            for (
+                score,
+                match,
+                line,
+                demand,
+                distance_text
+            ) in candidates
+        ]
+    }
 
 @router.get("/donations/{donation_id}/matches", tags=["Matching"])
 def get_matches(donation_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -852,6 +1125,160 @@ def list_ngo_matches(ngo_id: UUID, status: str | None = None, limit: int = 50, o
     if status: query = query.filter(DonationMatch.status == status)
     matches = query.order_by(DonationMatch.created_at.desc(), DonationMatch.id.desc()).offset(offset).limit(limit).all()
     return [{"id": str(match.id), "donation": donation_view(match.submission), "score": float(match.score), "status": match.status, "created_at": match.created_at.isoformat() if match.created_at else None} for match in matches]
+@router.get("/admin/dashboard", tags=["Admin"])
+def admin_dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_admin(user)
+
+    # Basic totals
+    total_ngos = db.query(func.count(NGO.id)).scalar() or 0
+    total_donors = db.query(func.count(Donor.id)).scalar() or 0
+    total_donations = db.query(func.count(ItemSubmission.id)).scalar() or 0
+    total_demands = db.query(func.count(DemandRecord.id)).scalar() or 0
+    total_matches = db.query(func.count(DonationMatch.id)).scalar() or 0
+
+    # Verification
+    verified_ngos = db.query(func.count(NGO.id)).filter(NGO.verified.is_(True)).scalar() or 0
+    verified_donors = total_donors
+
+    # Attention counts
+    unverified_ngos = db.query(func.count(NGO.id)).filter(NGO.verified.is_(False)).scalar() or 0
+    open_demands = db.query(func.count(DemandRecord.id)).scalar() or 0
+    pending_matches = (
+        db.query(func.count(DonationMatch.id))
+        .filter(DonationMatch.status.in_(["candidate", "recommended"]))
+        .scalar()
+        or 0
+    )
+
+    # Recent NGOs
+    recent_ngos = (
+        db.query(NGO)
+        .order_by(NGO.created_at.desc(), NGO.id.desc())
+        .limit(5)
+        .all()
+    )
+
+    # Recent donors
+    recent_donors = (
+        db.query(Donor)
+        .order_by(Donor.created_at.desc(), Donor.id.desc())
+        .limit(5)
+        .all()
+    )
+
+    # Recent donations
+    recent_donation_records = (
+        db.query(ItemSubmission)
+        .order_by(ItemSubmission.created_at.desc(), ItemSubmission.id.desc())
+        .limit(5)
+        .all()
+    )
+
+    recent_donations = []
+    for donation in recent_donation_records:
+        item = donation_view(donation)
+        item["donor_name"] = donation.donor.name if donation.donor else None
+        item["ngo_name"] = donation.ngo.name if donation.ngo else None
+        recent_donations.append(item)
+
+    # Simple six-month growth data
+    growth_months = []
+    now = datetime.now(timezone.utc)
+
+    for month_offset in range(5, -1, -1):
+        month_start = datetime(
+            now.year,
+            now.month,
+            1,
+            tzinfo=timezone.utc,
+        )
+
+        year = month_start.year
+        month = month_start.month - month_offset
+
+        while month <= 0:
+            month += 12
+            year -= 1
+
+        month_start = datetime(year, month, 1, tzinfo=timezone.utc)
+
+        if month == 12:
+            next_month = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+        else:
+            next_month = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+
+        growth_months.append({
+            "month": month_start.strftime("%b %Y"),
+            "ngos": db.query(func.count(NGO.id))
+                .filter(NGO.created_at >= month_start, NGO.created_at < next_month)
+                .scalar() or 0,
+            "donors": db.query(func.count(Donor.id))
+                .filter(Donor.created_at >= month_start, Donor.created_at < next_month)
+                .scalar() or 0,
+            "donations": db.query(func.count(ItemSubmission.id))
+                .filter(ItemSubmission.created_at >= month_start, ItemSubmission.created_at < next_month)
+                .scalar() or 0,
+        })
+
+    return {
+        "summary": {
+            "total_ngos": total_ngos,
+            "total_donors": total_donors,
+            "total_donations": total_donations,
+            "total_demands": total_demands,
+            "total_matches": total_matches,
+        },
+        "growth": {
+            "months": growth_months,
+            "changes": {
+                "ngos": None,
+                "donors": None,
+                "donations": None,
+                "demands": None,
+                "matches": None,
+            },
+        },
+        "verification": {
+            "ngos": {
+                "verified": verified_ngos,
+                "unverified": unverified_ngos,
+                "total": total_ngos,
+            },
+            "donors": {
+                "verified": verified_donors,
+                "unverified": 0,
+                "total": total_donors,
+            },
+        },
+        "recent_ngos": [
+            {
+                "id": str(ngo.id),
+                "name": ngo.name,
+                "contact_email": ngo.contact_email,
+                "city": ngo.city,
+                "verified": ngo.verified,
+                "created_at": ngo.created_at.isoformat() if ngo.created_at else None,
+            }
+            for ngo in recent_ngos
+        ],
+        "recent_donors": [
+            {
+                "id": str(donor.id),
+                "name": donor.name,
+                "email": donor.email,
+                "city": donor.city,
+                "created_at": donor.created_at.isoformat() if donor.created_at else None,
+            }
+            for donor in recent_donors
+        ],
+        "recent_donations": recent_donations,
+        "attention": {
+            "unverified_ngos": unverified_ngos,
+            "unverified_donors": 0,
+            "open_demands": open_demands,
+            "pending_matches": pending_matches,
+        },
+    }
 
 @router.get("/admin/donors", response_model=list[DonorResponse], tags=["Admin"])
 def list_admin_donors(limit: int = 50, offset: int = 0, db: Session = Depends(get_db), user: User = Depends(get_current_user)):

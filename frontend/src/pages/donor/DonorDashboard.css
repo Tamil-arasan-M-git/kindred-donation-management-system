@@ -1,0 +1,643 @@
+﻿/* ============================================================
+   Donor Overview Dashboard Styles (Reference Matching)
+   ============================================================ */
+
+.donor-overview-container {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  width: 100%;
+  max-width: 1380px;
+  margin: 0 auto;
+}
+
+/* ── 1. Hero Section ── */
+.donor-hero-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 4px 0 8px;
+  position: relative;
+  min-height: 140px;
+}
+
+.donor-hero-left {
+  flex: 1;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.donor-hero-eyebrow {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #435e4e;
+}
+
+.donor-hero-title {
+  font-size: clamp(1.8rem, 2.3vw, 2.35rem);
+  font-weight: 800;
+  color: #102a20;
+  line-height: 1.18;
+  letter-spacing: -0.025em;
+  margin: 0;
+}
+
+.donor-hero-subtitle {
+  font-size: 0.94rem;
+  color: #627568;
+  margin: 0;
+}
+
+.donor-hero-right {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  flex-shrink: 0;
+}
+
+.donor-hero-illustration-wrapper {
+  height: 145px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.donor-hero-illustration {
+  height: 140px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.donor-hero-scan-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #163f2d;
+  color: #ffffff;
+  border-radius: 12px;
+  padding: 12px 22px;
+  font-weight: 700;
+  font-size: 0.92rem;
+  text-decoration: none;
+  box-shadow: 0 4px 14px rgba(22, 63, 45, 0.18);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.donor-hero-scan-btn:hover {
+  background: #1f563e;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(22, 63, 45, 0.25);
+  color: #ffffff;
+}
+
+/* ── 2. Top Summary Stat Cards ── */
+.donor-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.donor-stat-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid rgba(22, 63, 45, 0.08);
+  box-shadow: 0 2px 8px rgba(22, 63, 45, 0.03);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.donor-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(22, 63, 45, 0.06);
+}
+
+.donor-stat-icon-box {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.donor-overview-container .donor-flaticon-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.donor-overview-container .donor-flaticon-arrow {
+  font-size: 15px;
+}
+
+.donor-icon-credit {
+  margin: -12px 2px 0;
+  color: #80918a;
+  font-size: 0.72rem;
+  text-align: right;
+}
+
+.donor-icon-credit a {
+  color: #54776a;
+}
+
+.stat-icon-coral {
+  background: #fef0eb;
+  color: #d9774b;
+}
+
+.stat-icon-blue {
+  background: #eaf0ff;
+  color: #3b82f6;
+}
+
+.stat-icon-green {
+  background: #e8f4ef;
+  color: #2e7d57;
+}
+
+.stat-icon-amber {
+  background: #fef6e4;
+  color: #d9774b;
+}
+
+.donor-stat-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.donor-stat-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #6b7c74;
+}
+
+.donor-stat-val {
+  font-size: 1.95rem;
+  font-weight: 800;
+  color: #102a20;
+  line-height: 1.1;
+  margin: 2px 0;
+}
+
+.donor-stat-desc {
+  font-size: 0.74rem;
+  color: #8a9c92;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 3. Middle Grid: Your Impact & Recent Activity ── */
+.donor-middle-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.donor-panel-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 22px 24px;
+  border: 1px solid rgba(22, 63, 45, 0.08);
+  box-shadow: 0 2px 8px rgba(22, 63, 45, 0.03);
+}
+
+.donor-panel-header {
+  margin-bottom: 16px;
+}
+
+.donor-panel-title {
+  font-size: 1.18rem;
+  font-weight: 800;
+  color: #102a20;
+  margin: 0;
+}
+
+.donor-panel-subtitle {
+  font-size: 0.84rem;
+  color: #6b7c74;
+  margin: 3px 0 0;
+}
+
+/* Impact Card */
+.donor-impact-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.donor-impact-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  text-align: center;
+}
+
+.donor-impact-tile {
+  background: #edf6f1;
+  border-radius: 12px;
+  padding: 14px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.donor-impact-tile-icon {
+  color: #163f2d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+}
+
+.donor-impact-tile-val {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #102a20;
+  line-height: 1;
+}
+
+.donor-impact-tile-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #4e6355;
+  line-height: 1.25;
+}
+
+/* Quote Card */
+.donor-quote-card {
+  background: #fbf5eb;
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(217, 119, 75, 0.12);
+  margin-top: 2px;
+}
+
+.donor-quote-symbol {
+  font-size: 2.6rem;
+  line-height: 1;
+  color: #e28b61;
+  font-family: Georgia, serif;
+  flex-shrink: 0;
+  margin-top: -8px;
+}
+
+.donor-quote-body {
+  flex: 1;
+  z-index: 1;
+  position: relative;
+  max-width: 82%;
+}
+
+.donor-quote-text {
+  font-size: 0.86rem;
+  font-style: italic;
+  color: #3b4d41;
+  line-height: 1.55;
+  font-weight: 500;
+  margin: 0;
+}
+
+.donor-quote-author {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #7a8f84;
+  margin: 6px 0 0;
+  font-style: normal;
+}
+
+.donor-quote-leaves-art {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  height: 95px;
+  pointer-events: none;
+  opacity: 0.88;
+  z-index: 0;
+}
+
+/* Recent Activity Card */
+.donor-activity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.donor-view-all-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #163f2d;
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+}
+
+.donor-view-all-link:hover {
+  opacity: 0.75;
+  text-decoration: underline;
+}
+
+.donor-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.donor-activity-empty {
+  margin: 0;
+  padding: 14px 0;
+  color: #6b7c74;
+  font-size: 0.86rem;
+}
+
+.donor-activity-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.donor-activity-badge {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.badge-completed {
+  background: #e8f4ef;
+  color: #2e7d57;
+}
+
+.badge-match {
+  background: #eaf0ff;
+  color: #3b82f6;
+}
+
+.badge-created {
+  background: #fef0eb;
+  color: #d9774b;
+}
+
+.badge-pickup {
+  background: #e8f4ef;
+  color: #2e7d57;
+}
+
+.donor-activity-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.donor-activity-row-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #102a20;
+  margin: 0;
+}
+
+.donor-activity-row-desc {
+  font-size: 0.76rem;
+  color: #6b7c74;
+  margin: 2px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.donor-activity-row-time {
+  font-size: 0.74rem;
+  color: #9aa8a0;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── 4. Quick Actions Panel ── */
+.donor-quick-actions-panel {
+  margin-top: 2px;
+}
+
+.donor-quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.donor-qa-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-radius: 14px;
+  padding: 18px 16px;
+  text-decoration: none;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.donor-qa-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(22, 63, 45, 0.09);
+}
+
+.qa-card-green {
+  background: #e8f4ef;
+  border-color: rgba(46, 125, 87, 0.12);
+}
+
+.qa-card-orange {
+  background: #fef0eb;
+  border-color: rgba(217, 119, 75, 0.12);
+}
+
+.qa-card-blue {
+  background: #eaf0ff;
+  border-color: rgba(59, 130, 246, 0.12);
+}
+
+.qa-card-mint {
+  background: #eaf5f0;
+  border-color: rgba(46, 125, 87, 0.12);
+}
+
+.donor-qa-icon-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.qa-card-green .donor-qa-icon-wrap {
+  color: #2e7d57;
+}
+
+.qa-card-orange .donor-qa-icon-wrap {
+  color: #d9774b;
+}
+
+.qa-card-blue .donor-qa-icon-wrap {
+  color: #3b82f6;
+}
+
+.qa-card-mint .donor-qa-icon-wrap {
+  color: #2e7d57;
+}
+
+.donor-qa-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.donor-qa-card-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #102a20;
+  margin: 0;
+}
+
+.donor-qa-card-desc {
+  font-size: 0.74rem;
+  color: #57675a;
+  margin: 3px 0 0;
+  line-height: 1.35;
+}
+
+.donor-qa-arrow-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #163f2d;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+  transition:
+    transform 0.2s ease,
+    background 0.2s ease;
+}
+
+.donor-qa-card:hover .donor-qa-arrow-btn {
+  transform: translateX(2px);
+  background: #ffffff;
+}
+
+/* ── Profile Incomplete Card ── */
+.donor-profile-reminder-card {
+  background: #fff8ee;
+  border: 1px solid #f5d99a;
+  border-radius: 14px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.donor-profile-reminder-text h3 {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #8a5e00;
+  margin: 0;
+}
+
+.donor-profile-reminder-text p {
+  font-size: 0.8rem;
+  color: #a07820;
+  margin: 3px 0 0;
+}
+
+.donor-profile-reminder-btn {
+  background: #163f2d;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.18s;
+}
+
+.donor-profile-reminder-btn:hover {
+  background: #1e5c42;
+  color: #ffffff;
+}
+
+/* ── Responsive Rules ── */
+@media (max-width: 1200px) {
+  .donor-hero-illustration {
+    height: 110px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .donor-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .donor-quick-actions-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .donor-middle-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .donor-hero-section {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .donor-hero-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .donor-hero-illustration-wrapper {
+    display: none;
+  }
+  .donor-stats-grid {
+    grid-template-columns: 1fr;
+  }
+  .donor-quick-actions-grid {
+    grid-template-columns: 1fr;
+  }
+}

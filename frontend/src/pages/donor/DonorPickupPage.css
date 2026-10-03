@@ -1,0 +1,179 @@
+.donor-pickups-list {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.donor-pickup-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 22px;
+  padding: 18px;
+  border: 1px solid #dfe6e2;
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 5px 18px rgba(19, 58, 45, 0.035);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.donor-pickup-card:hover {
+  border-color: #c8dbd2;
+  box-shadow: 0 8px 22px rgba(19, 58, 45, 0.07);
+}
+.donor-pickup-art {
+  width: 96px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #f1f4f0, #e5eee9);
+  color: #08785e;
+  font-size: 2.4rem;
+}
+.donor-pickup-info {
+  min-width: 0;
+}
+.donor-pickup-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+.donor-pickup-id {
+  min-width: 0;
+  color: #173e32;
+  font-size: 1.02rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+.donor-pickup-id:hover {
+  color: #078266;
+  text-decoration: underline;
+}
+.donor-pickup-id:focus-visible,
+.donor-pickup-details:focus-visible {
+  outline: 2px solid #078266;
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+.donor-pickup-meta {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin: 7px 0;
+  color: #68766f;
+  line-height: 1.5;
+}
+.donor-pickup-meta > i {
+  flex: 0 0 18px;
+  margin-top: 3px;
+  color: #1c4b3e;
+  font-size: 1.05rem;
+}
+.donor-pickup-meta strong {
+  color: #25463c;
+}
+.donor-pickup-card .status-submitted {
+  background: #e3efff;
+  color: #205db4;
+  border: 1px solid #c8dcff;
+}
+.donor-pickup-card .status-acknowledged {
+  background: #dff4ec;
+  color: #087354;
+  border: 1px solid #bce7d6;
+}
+.donor-pickup-card .status-pickup {
+  background: #fff0dc;
+  color: #985b17;
+  border: 1px solid #f3d7aa;
+}
+.donor-pickup-details {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 46px;
+  margin-top: 12px;
+  padding: 9px 14px;
+  border: 1px solid #dce4df;
+  border-radius: 11px;
+  color: #173e32;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+.donor-pickup-details:hover {
+  background: #edf7f2;
+  border-color: #acd1c2;
+}
+
+@media (max-width: 620px) {
+  .donor-pickups-list {
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .donor-pickup-card {
+    grid-template-columns: 58px minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+    padding: 13px;
+    border-radius: 14px;
+  }
+  .donor-pickup-art {
+    width: 58px;
+    border-radius: 10px;
+    font-size: 1.7rem;
+  }
+  .donor-pickup-heading {
+    align-items: flex-start;
+    flex-direction: column-reverse;
+    gap: 7px;
+    margin-bottom: 9px;
+  }
+  .donor-pickup-id {
+    font-size: 0.9rem;
+    line-height: 1.35;
+  }
+  .donor-pickup-card .status-pill {
+    padding: 0.27rem 0.58rem;
+    font-size: 0.72rem;
+  }
+  .donor-pickup-meta {
+    gap: 8px;
+    margin: 6px 0;
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+  .donor-pickup-meta > i {
+    flex-basis: 15px;
+    font-size: 0.95rem;
+  }
+  .donor-pickup-details {
+    min-height: 42px;
+    margin-top: 9px;
+    font-size: 0.88rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .donor-pickup-card {
+    grid-template-columns: 1fr;
+  }
+  .donor-pickup-art {
+    display: none;
+  }
+  .donor-pickup-heading {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+}

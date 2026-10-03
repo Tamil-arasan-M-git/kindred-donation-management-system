@@ -1,129 +1,35 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import api from "../../api/client";
 import EmptyState from "../../components/common/EmptyState";
+import ErrorMessage from "../../components/common/ErrorMessage";
+import LoadingState from "../../components/common/LoadingState";
 import PageHeader from "../../components/layout/PageHeader";
 import AdminShell from "./AdminShell";
+import donorsBanner from "../../assets/admin-donors-reference.png";
+import "./AdminDonorsPage.css";
 
-const PAGE_SIZE = 50;
-
-const formatDate = (value) => {
-  if (!value) return "—";
-
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString();
-};
+const initials = (name = "") => String(name || "Donor").split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+const formatDate = (value, locale, options = {}) => { if (!value) return "N/A"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "N/A" : new Intl.DateTimeFormat(locale, options).format(date); };
+const donorDonationStats = (donor, donations) => { const records = donations.filter((donation) => donation.donor_id === donor.id); return { donations: records.length, items: records.reduce((total, donation) => total + (donation.items || []).reduce((sum, item) => sum + (Number(item.quantity) || 0), 0), 0), accepted: records.filter((donation) => ["matched", "packaging_notified", "pickup_scheduled", "collected", "delivered", "acknowledged"].includes(donation.status)).length, cancelled: records.filter((donation) => donation.status === "cancelled").length, history: records }; };
 
 export default function AdminDonorsPage() {
-  const [donors, setDonors] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [offset, setOffset] = useState(0);
+  const { t, i18n } = useTranslation();
+  const [donors, setDonors] = useState([]); const [donations, setDonations] = useState([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [selectedDonor, setSelectedDonor] = useState(null); const [tab, setTab] = useState("overview"); const [query, setQuery] = useState(""); const [verification, setVerification] = useState("all"); const [city, setCity] = useState("all"); const [sort, setSort] = useState("newest"); const [page, setPage] = useState(1); const pageSize = 6;
+  const loadDonors = useCallback(async () => { setLoading(true); setError(""); try { const [donorResult, donationResult] = await Promise.allSettled([api.getAdminDonors(), api.getDonations()]); if (donorResult.status === "rejected") throw donorResult.reason; setDonors(Array.isArray(donorResult.value) ? donorResult.value : []); if (donationResult.status === "fulfilled") setDonations(Array.isArray(donationResult.value) ? donationResult.value : []); } catch (err) { setError(t("errors.generic")); } finally { setLoading(false); } }, [t]);
+  useEffect(() => { loadDonors(); }, [loadDonors]);
+  useEffect(() => { if (!selectedDonor) return undefined; const close = (event) => { if (event.key === "Escape") setSelectedDonor(null); }; window.addEventListener("keydown", close); return () => window.removeEventListener("keydown", close); }, [selectedDonor]);
+  const cities = useMemo(() => [...new Set(donors.map((donor) => donor.city).filter(Boolean))].sort(), [donors]);
+  const filteredDonors = useMemo(() => { const needle = query.trim().toLowerCase(); return [...donors].filter((donor) => { const searchable = `${donor.name || ""} ${donor.email || ""} ${donor.city || ""}`.toLowerCase(); return (!needle || searchable.includes(needle)) && (verification === "all" || (verification === "verified" ? donor.verified : !donor.verified)) && (city === "all" || donor.city === city); }).sort((a, b) => sort === "name" ? String(a.name || a.email).localeCompare(String(b.name || b.email)) : new Date(b.created_at || 0) - new Date(a.created_at || 0)); }, [city, donors, query, sort, verification]);
+  const pageCount = Math.max(1, Math.ceil(filteredDonors.length / pageSize)); const currentPage = Math.min(page, pageCount); const visibleDonors = filteredDonors.slice((currentPage - 1) * pageSize, currentPage * pageSize); const verifiedCount = donors.filter((donor) => donor.verified).length; const selectedStats = selectedDonor ? donorDonationStats(selectedDonor, donations) : null;
+  const donorName = selectedDonor?.name || selectedDonor?.email || t("admin.donors.unknown", { defaultValue: "Unknown donor" });
 
-  const loadDonors = async (nextOffset = offset) => {
-    setLoading(true);
-    setError("");
-
-    try {
-      const data = await api.getAdminDonors(PAGE_SIZE, nextOffset);
-      setDonors(Array.isArray(data) ? data : []);
-      setOffset(nextOffset);
-    } catch (err) {
-      setError(
-        err?.status === 403
-          ? "You are not authorized to view the donor directory."
-          : "Unable to load donor records. Please try again.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadDonors(0);
-  }, []);
-
-  return (
-    <AdminShell>
-      <PageHeader
-        eyebrow="Donors"
-        title="Donor directory"
-        description="View registered donors."
-      />
-
-      {loading ? (
-        <EmptyState title="Loading donors">Loading donor records...</EmptyState>
-      ) : null}
-
-      {!loading && error ? (
-        <EmptyState
-          title="Unable to load donors"
-          action={
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => loadDonors(offset)}
-            >
-              Retry
-            </button>
-          }
-        >
-          {error}
-        </EmptyState>
-      ) : null}
-
-      {!loading && !error && donors.length === 0 ? (
-        <EmptyState title="No donors found">
-          There are currently no donor records.
-        </EmptyState>
-      ) : null}
-
-      {!loading && !error && donors.length > 0 ? (
-        <>
-          <div className="donor-table-wrap">
-            <table className="donor-table">
-              <thead>
-                <tr>
-                  <th scope="col">Name</th>
-                  <th scope="col">Email</th>
-                  <th scope="col">Phone</th>
-                  <th scope="col">City</th>
-                  <th scope="col">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {donors.map((donor) => (
-                  <tr key={donor.id}>
-                    <td>{donor.name || "—"}</td>
-                    <td>{donor.email || "—"}</td>
-                    <td>{donor.phone || "—"}</td>
-                    <td>{donor.city || "—"}</td>
-                    <td>{formatDate(donor.created_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="donor-pagination">
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={offset === 0 || loading}
-              onClick={() => loadDonors(Math.max(0, offset - PAGE_SIZE))}
-            >
-              Previous
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={donors.length < PAGE_SIZE || loading}
-              onClick={() => loadDonors(offset + PAGE_SIZE)}
-            >
-              Next
-            </button>
-          </div>
-        </>
-      ) : null}
-    </AdminShell>
-  );
+  return <AdminShell><div className="admin-donors-page">
+    <PageHeader eyebrow={t("navigation.donors")} title={t("admin.donors.title", { defaultValue: "All Donors" })} description={t("admin.donors.description", { defaultValue: "View registered donors and manage verification status." })} action={<img className="admin-donors-banner" src={donorsBanner} alt="" aria-hidden="true" />} />
+    <section className="admin-donors-stats"><article className="admin-donor-stat stat-green"><span><i className="fi fi-rr-users" /></span><div><small>{t("admin.donors.total", { defaultValue: "Total Donors" })}</small><strong>{donors.length}</strong></div></article><article className="admin-donor-stat stat-blue"><span><i className="fi fi-rr-shield-check" /></span><div><small>{t("admin.donors.verified", { defaultValue: "Verified Donors" })}</small><strong>{verifiedCount}</strong><em>{donors.length ? Math.round((verifiedCount / donors.length) * 100) : 0}% verified</em><b><i style={{ width: `${donors.length ? (verifiedCount / donors.length) * 100 : 0}%` }} /></b></div></article><article className="admin-donor-stat stat-orange"><span><i className="fi fi-rr-clock" /></span><div><small>{t("admin.donors.unverified", { defaultValue: "Unverified Donors" })}</small><strong>{donors.length - verifiedCount}</strong><em>{donors.length ? Math.round(((donors.length - verifiedCount) / donors.length) * 100) : 0}% pending</em><b><i style={{ width: `${donors.length ? ((donors.length - verifiedCount) / donors.length) * 100 : 0}%` }} /></b></div></article><article className="admin-donor-stat stat-purple"><span><i className="fi fi-rr-gift" /></span><div><small>{t("admin.donors.totalDonations", { defaultValue: "Total Donations" })}</small><strong>{donations.length}</strong><em>{t("admin.donors.liveData", { defaultValue: "From donation records" })}</em></div></article></section>
+    <section className="admin-donors-filters"><label className="admin-donors-search"><i className="fi fi-rr-search" /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={t("admin.donors.search", { defaultValue: "Search by name, email, or city..." })} /></label><label><span>{t("admin.donors.verificationFilter", { defaultValue: "Verification" })}</span><select value={verification} onChange={(event) => { setVerification(event.target.value); setPage(1); }}><option value="all">{t("admin.donors.allDonors", { defaultValue: "All donors" })}</option><option value="verified">{t("admin.verified", { defaultValue: "Verified" })}</option><option value="unverified">{t("admin.unverified", { defaultValue: "Unverified" })}</option></select></label><label><span>{t("admin.donors.cityFilter", { defaultValue: "City" })}</span><select value={city} onChange={(event) => { setCity(event.target.value); setPage(1); }}><option value="all">{t("admin.donors.allCities", { defaultValue: "All cities" })}</option>{cities.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label><span>{t("admin.donors.sortBy", { defaultValue: "Sort by" })}</span><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="newest">{t("admin.donors.newest", { defaultValue: "Newest first" })}</option><option value="name">{t("admin.donors.nameSort", { defaultValue: "Name" })}</option></select></label></section>
+    {error ? <ErrorMessage onRetry={loadDonors}>{error}</ErrorMessage> : null}{loading ? <LoadingState message={t("common.loading")} /> : null}{!loading && !error && !filteredDonors.length ? <EmptyState title={t("admin.donors.empty")} /> : null}
+    {!loading && !error && filteredDonors.length ? <><section className="admin-donors-table"><div className="admin-donors-table-head"><span>#</span><span>{t("admin.donors.donor", { defaultValue: "Donor" })}</span><span>{t("admin.donors.contact", { defaultValue: "Contact" })}</span><span>{t("admin.donors.location", { defaultValue: "Location" })}</span><span>{t("admin.donors.joined", { defaultValue: "Joined On" })}</span><span>{t("admin.donors.contributions", { defaultValue: "Contributions" })}</span><span>{t("admin.donors.status", { defaultValue: "Status" })}</span><span>{t("admin.donors.actions", { defaultValue: "Actions" })}</span></div>{visibleDonors.map((donor, index) => { const stats = donorDonationStats(donor, donations); return <article className="admin-donor-row" key={donor.id}><div className="admin-donor-index">{(currentPage - 1) * pageSize + index + 1}</div><div className="admin-donor-identity"><span className="admin-donor-avatar">{initials(donor.name || donor.email)}</span><strong>{donor.name || donor.email}</strong></div><div className="admin-donor-contact"><span><i className="fi fi-rr-envelope" />{donor.email || "N/A"}</span><span><i className="fi fi-rr-phone-call" />{donor.phone || "N/A"}</span></div><div className="admin-donor-location"><i className="fi fi-rr-marker" />{donor.city || "N/A"}</div><time className="admin-donor-joined"><i className="fi fi-rr-calendar" />{formatDate(donor.created_at, i18n.resolvedLanguage, { day: "2-digit", month: "short", year: "numeric" })}</time><div className="admin-donor-contributions"><span><i className="fi fi-rr-box" />{stats.donations} {t("admin.donors.donationsShort", { defaultValue: "donations" })}</span><span><i className="fi fi-rr-heart" />{stats.items} {t("admin.donors.itemsShort", { defaultValue: "items" })}</span></div><span className={`admin-donor-verification ${donor.verified ? "verified" : "unverified"}`}><i />{donor.verified ? t("admin.verified", { defaultValue: "Verified" }) : t("admin.unverified", { defaultValue: "Unverified" })}</span><div className="admin-donor-actions"><button type="button" className="admin-donor-details-button" onClick={() => { setSelectedDonor(donor); setTab("overview"); }}><i className="fi fi-rr-eye" />{t("admin.donors.viewDetails", { defaultValue: "View Details" })}</button></div></article>; })}</section><footer className="admin-donors-pagination"><span>{t("admin.donors.showing", { defaultValue: "Showing" })} <strong>{(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filteredDonors.length)}</strong> {t("admin.donors.of", { defaultValue: "of" })} <strong>{filteredDonors.length}</strong> {t("admin.donors.donors", { defaultValue: "donors" })}</span><div><button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={currentPage === 1}>‹</button>{Array.from({ length: pageCount }, (_, index) => index + 1).slice(0, 5).map((value) => <button type="button" className={value === currentPage ? "active" : ""} key={value} onClick={() => setPage(value)}>{value}</button>)}<button type="button" onClick={() => setPage((value) => Math.min(pageCount, value + 1))} disabled={currentPage === pageCount}>›</button></div></footer></> : null}
+    {selectedDonor ? <div className="admin-donor-drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSelectedDonor(null)}><aside className="admin-donor-drawer" role="dialog" aria-modal="true" aria-labelledby="admin-donor-details-title"><header><h2 id="admin-donor-details-title">{t("admin.donors.details", { defaultValue: "Donor Details" })}</h2><button type="button" onClick={() => setSelectedDonor(null)} aria-label={t("common.close")}><i className="fi fi-rr-cross-small" /></button></header><div className="admin-donor-drawer-profile"><span className="admin-donor-avatar large">{initials(donorName)}</span><div><h3>{donorName}</h3><span className={`admin-donor-verification ${selectedDonor.verified ? "verified" : "unverified"}`}><i />{selectedDonor.verified ? t("admin.verified", { defaultValue: "Verified" }) : t("admin.unverified", { defaultValue: "Unverified" })}</span><p><i className="fi fi-rr-envelope" />{selectedDonor.email || "N/A"}</p><p><i className="fi fi-rr-phone-call" />{selectedDonor.phone || "N/A"}</p></div></div><nav className="admin-donor-drawer-tabs"><button type="button" className={tab === "overview" ? "active" : ""} onClick={() => setTab("overview")}>{t("admin.donors.overview", { defaultValue: "Overview" })}</button><button type="button" className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>{t("admin.donors.history", { defaultValue: "Donation History" })}</button></nav>{tab === "overview" ? <div className="admin-donor-drawer-content"><section className="admin-donor-detail-card"><h3><i className="fi fi-rr-user" />{t("admin.donors.personal", { defaultValue: "Personal Information" })}</h3><dl><div><dt>{t("admin.donors.fullName", { defaultValue: "Full Name" })}</dt><dd>{selectedDonor.name || "N/A"}</dd></div><div><dt>Email</dt><dd>{selectedDonor.email || "N/A"}</dd></div><div><dt>{t("admin.donors.phone", { defaultValue: "Phone" })}</dt><dd>{selectedDonor.phone || "N/A"}</dd></div><div><dt>{t("admin.donors.city", { defaultValue: "City" })}</dt><dd>{selectedDonor.city || "N/A"}</dd></div><div><dt>{t("admin.donors.joinedOn", { defaultValue: "Joined On" })}</dt><dd>{formatDate(selectedDonor.created_at, i18n.resolvedLanguage, { day: "2-digit", month: "long", year: "numeric" })}</dd></div></dl></section><section className="admin-donor-detail-card"><h3><i className="fi fi-rr-gift" />{t("admin.donors.contributionSummary", { defaultValue: "Contribution Summary" })}</h3><div className="admin-donor-summary-grid"><span><strong>{selectedStats.donations}</strong><small>{t("admin.donors.totalDonations", { defaultValue: "Total Donations" })}</small></span><span><strong>{selectedStats.items}</strong><small>{t("admin.donors.totalItems", { defaultValue: "Total Items" })}</small></span><span><strong>{selectedStats.accepted}</strong><small>{t("admin.donors.acceptedMatches", { defaultValue: "Accepted Matches" })}</small></span><span><strong>{selectedStats.cancelled}</strong><small>{t("status.cancelled", { defaultValue: "Cancelled" })}</small></span></div></section><section className="admin-donor-detail-card"><h3><i className="fi fi-rr-shield-check" />{t("admin.donors.verificationStatus", { defaultValue: "Verification Status" })}</h3><div className={`admin-donor-verification-message ${selectedDonor.verified ? "verified" : "unverified"}`}><strong>{selectedDonor.verified ? t("admin.verified", { defaultValue: "Verified" }) : t("admin.unverified", { defaultValue: "Unverified" })}</strong><p>{selectedDonor.verified ? t("admin.donors.verifiedDescription", { defaultValue: "This donor is verified." }) : t("admin.donors.unverifiedDescription", { defaultValue: "This donor is not yet verified." })}</p></div></section></div> : <div className="admin-donor-history">{selectedStats.history.length ? selectedStats.history.map((donation) => <div key={donation.id}><span className="admin-donor-history-icon"><i className="fi fi-rr-box" /></span><div><strong>Donation #{String(donation.id).slice(0, 8)}</strong><small>{donation.status || "Unknown"} · {(donation.items || []).reduce((total, item) => total + (Number(item.quantity) || 0), 0)} items</small></div><time>{formatDate(donation.created_at, i18n.resolvedLanguage, { day: "2-digit", month: "short", year: "numeric" })}</time></div>) : <p>{t("admin.donors.noHistory", { defaultValue: "No donation history available." })}</p>}</div>}<footer><button type="button" className="admin-donor-close-button" onClick={() => setSelectedDonor(null)}>{t("common.close", { defaultValue: "Close" })}</button></footer></aside></div> : null}
+  </div></AdminShell>;
 }

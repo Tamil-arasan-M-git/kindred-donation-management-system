@@ -106,6 +106,7 @@ class ItemSubmissionLine(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     submission_id = Column(UUID(as_uuid=True), ForeignKey("item_submissions.id", ondelete="CASCADE"), nullable=False)
     class_name = Column(String(50), nullable=False)
+    category = Column(String(50), nullable=False)
     subcategory = Column(String(50), nullable=True)
     quantity = Column(Integer, nullable=False)
     detection_confidence = Column(Numeric(4, 3))

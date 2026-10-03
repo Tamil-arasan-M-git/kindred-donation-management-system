@@ -1,0 +1,183 @@
+.donor-matches-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 18px;
+  margin-top: 20px;
+}
+
+.donor-match-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  border: 1px solid #dfe6e2;
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 5px 18px rgba(19, 58, 45, 0.035);
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease;
+}
+
+.donor-match-card:hover {
+  transform: translateY(-2px);
+  border-color: #c8dbd2;
+  box-shadow: 0 10px 24px rgba(19, 58, 45, 0.08);
+}
+
+.donor-match-top {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+  min-height: 100px;
+}
+
+.donor-match-art {
+  width: 100px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #f3f0ef, #e8e9e4);
+  color: #155d4a;
+  font-size: 2.5rem;
+}
+
+.donor-match-top h2 {
+  margin: 6px 0 0;
+  color: #173e32;
+  font-size: 1.15rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.donor-match-id {
+  margin: 14px 0 8px;
+  color: #68766f;
+  font-size: 0.94rem;
+  overflow-wrap: anywhere;
+}
+
+.donor-match-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  color: #52635c;
+}
+
+.donor-match-candidates {
+  display: grid;
+  gap: 9px;
+  margin: 0 0 16px;
+  color: #40564c;
+}
+.donor-match-candidate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f3f8f5;
+  font-size: 0.9rem;
+}
+.donor-match-candidate .small-button {
+  min-height: 36px;
+  padding: 7px 10px;
+}
+
+.donor-match-card .status-submitted {
+  background: #e3efff;
+  color: #205db4;
+  border: 1px solid #c8dcff;
+}
+.donor-match-card .status-acknowledged {
+  background: #dff4ec;
+  color: #087354;
+  border: 1px solid #bce7d6;
+}
+
+.donor-match-details {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: auto;
+  padding: 10px 14px;
+  border: 1px solid #dce4df;
+  border-radius: 11px;
+  color: #173e32;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.donor-match-details:hover {
+  background: #edf7f2;
+  border-color: #acd1c2;
+}
+.donor-match-details:focus-visible {
+  outline: 2px solid #078266;
+  outline-offset: 3px;
+}
+.donor-match-details > i {
+  font-size: 1rem;
+}
+
+@media (max-width: 1100px) {
+  .donor-matches-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .donor-matches-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .donor-match-card {
+    padding: 14px;
+    border-radius: 14px;
+  }
+  .donor-match-top {
+    grid-template-columns: 74px minmax(0, 1fr);
+    gap: 12px;
+    min-height: 74px;
+  }
+  .donor-match-art {
+    width: 74px;
+    border-radius: 10px;
+    font-size: 1.9rem;
+  }
+  .donor-match-top h2 {
+    margin-top: 2px;
+    font-size: 1rem;
+    line-height: 1.4;
+  }
+  .donor-match-id {
+    margin: 11px 0 7px;
+    font-size: 0.87rem;
+  }
+  .donor-match-status {
+    gap: 9px;
+    margin-bottom: 12px;
+    font-size: 0.9rem;
+  }
+  .donor-match-card .status-pill {
+    padding: 0.28rem 0.6rem;
+    font-size: 0.74rem;
+  }
+  .donor-match-details {
+    min-height: 46px;
+  }
+}

@@ -1,0 +1,113 @@
+.match-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(13, 35, 28, 0.56);
+}
+
+.match-modal {
+  position: relative;
+  width: min(100%, 540px);
+  max-height: min(88vh, 760px);
+  overflow: auto;
+  padding: 28px;
+  border: 1px solid #dfe6e2;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(13, 35, 28, 0.24);
+}
+
+.match-modal h2 {
+  margin: 0 40px 18px 0;
+  color: #173e32;
+}
+.match-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: #edf4f0;
+  color: #173e32;
+  font-size: 1.6rem;
+  cursor: pointer;
+}
+.match-modal-score {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 18px 0 8px;
+  color: #155d4a;
+}
+.match-modal-score strong {
+  font-size: 2.5rem;
+  line-height: 1;
+}
+.match-modal-score span {
+  color: #52635c;
+  font-weight: 650;
+}
+.match-modal-context {
+  margin: 18px 0;
+  padding: 13px 15px;
+  border-radius: 11px;
+  background: #f3f8f5;
+  color: #40564c;
+  font-size: 0.92rem;
+}
+.match-modal-context p {
+  margin: 4px 0;
+}
+.match-score-breakdown {
+  display: grid;
+  gap: 17px;
+  margin: 22px 0;
+}
+.match-score-factor-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #173e32;
+}
+.match-score-factor-heading span {
+  color: #155d4a;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.match-score-track {
+  height: 8px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #e8efeb;
+}
+.match-score-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #36a582, #087354);
+}
+.match-score-factor p,
+.match-modal-note {
+  margin: 5px 0 0;
+  color: #68766f;
+  font-size: 0.88rem;
+}
+.match-modal-note {
+  padding-top: 14px;
+  border-top: 1px solid #e5ece8;
+}
+
+@media (max-width: 520px) {
+  .match-modal {
+    padding: 22px 18px;
+  }
+  .match-score-factor-heading {
+    font-size: 0.9rem;
+  }
+}

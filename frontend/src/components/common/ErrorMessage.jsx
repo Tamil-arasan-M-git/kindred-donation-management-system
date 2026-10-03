@@ -1,7 +1,10 @@
+import { useTranslation } from "react-i18next";
+
 export default function ErrorMessage({ children, onRetry = null }) {
+  const { t } = useTranslation();
   return (
     <div className="state-panel error-message" role="alert">
-      <strong>Something needs attention</strong>
+      <strong>{t("errors.attention")}</strong>
       <p>{children}</p>
       {onRetry ? (
         <button
@@ -9,7 +12,7 @@ export default function ErrorMessage({ children, onRetry = null }) {
           className="ui-button ui-button-secondary"
           onClick={onRetry}
         >
-          Try again
+          {t("errors.retry")}
         </button>
       ) : null}
     </div>

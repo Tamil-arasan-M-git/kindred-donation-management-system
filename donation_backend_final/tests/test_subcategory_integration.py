@@ -9,12 +9,14 @@ from taxonomy import (
 
 
 def test_all_verified_model_classes_have_expected_taxonomy():
-    assert len(MODEL_CLASS_TO_TAXONOMY) == 21
+    assert len(MODEL_CLASS_TO_TAXONOMY) == 81
     assert normalize_model_class("shirt") == {"category": "clothing", "subcategory": "shirt"}
-    assert normalize_model_class("other_electronics") == {
-        "category": "electronics",
-        "subcategory": "other_electronics",
-    }
+    assert normalize_model_class("computer") == {"category": "electronics", "subcategory": "computer"}
+    assert normalize_model_class("book") == {"category": "books", "subcategory": "book"}
+    assert normalize_model_class("apple") == {"category": "food", "subcategory": "apple"}
+    assert normalize_model_class("chair") == {"category": "furniture", "subcategory": "chair"}
+    assert normalize_model_class("cooking-pot") == {"category": "utensils", "subcategory": "cooking-pot"}
+    assert normalize_model_class("sneakers") == {"category": "clothing", "subcategory": "sneakers"}
 
 
 def test_unknown_class_is_safe_and_requires_review():
@@ -48,3 +50,11 @@ def test_matching_subcategory_rules():
     assert subcategories_compatible("shirt", "shirt")
     assert not subcategories_compatible("shirt", "pants")
     assert subcategories_compatible("shirt", None)
+
+
+def test_donation_update_category_resolution():
+    req_item = DonationItemRequest(class_name="shirt", quantity=2)
+    taxonomy = normalize_model_class(req_item.class_name)
+    category = req_item.category if req_item.category else (taxonomy["category"] if taxonomy else req_item.class_name)
+    assert category == "clothing"
+    assert req_item.subcategory == "shirt"

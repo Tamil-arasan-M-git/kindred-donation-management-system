@@ -1,155 +1,35 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import api from "../../api/client";
+import EmptyState from "../../components/common/EmptyState";
 import ErrorMessage from "../../components/common/ErrorMessage";
 import LoadingState from "../../components/common/LoadingState";
 import PageHeader from "../../components/layout/PageHeader";
 import AdminShell from "./AdminShell";
+import ngosBanner from "../../assets/admin-ngos-reference-transparent.png";
+import "./AdminNGOsPage.css";
+
+const initials = (name = "NGO") => String(name).split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+const formatDate = (value, locale, options = {}) => { if (!value) return "N/A"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "N/A" : new Intl.DateTimeFormat(locale, options).format(date); };
 
 export default function AdminNGOsPage() {
-  const [ngos, setNgos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [updatingId, setUpdatingId] = useState("");
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [search, setSearch] = useState("");
-  const [selectedNgo, setSelectedNgo] = useState(null);
-  const loadNgos = () => {
-    setLoading(true);
-    api
-      .get("/api/ngos")
-      .then(setNgos)
-      .catch((err) => setError(err.message || "NGOs could not be loaded."))
-      .finally(() => setLoading(false));
-  };
-  useEffect(loadNgos, []);
-  const updateVerification = async (ngo) => {
-    if (!window.confirm(`${ngo.verified ? "Unverify" : "Verify"} ${ngo.name}?`)) return;
-    setUpdatingId(ngo.id);
-    setError("");
-    setNotice("");
-    try {
-      const updatedNgo = await api.patch(`/api/ngos/${ngo.id}/verification`, {
-        verified: !ngo.verified,
-      });
-      setNgos((current) =>
-        current.map((item) => (item.id === ngo.id ? updatedNgo : item)),
-      );
-      setNotice(
-        `${updatedNgo.name} is now ${updatedNgo.verified ? "verified" : "unverified"}.`,
-      );
-    } catch (err) {
-      setError(err.message || "Verification could not be updated.");
-    } finally {
-      setUpdatingId("");
-    }
-  };
-  const openDetails = async (ngo) => {
-    setError("");
-    try {
-      const [profile, demands] = await Promise.all([
-        api.get(`/api/ngos/${ngo.id}`),
-        api.get(`/api/ngos/${ngo.id}/demands`),
-      ]);
-      setSelectedNgo({ profile, demands });
-    } catch (err) {
-      setError(err.message || "NGO details could not be loaded.");
-    }
-  };
-  const visibleNgos = ngos.filter((ngo) =>
-    `${ngo.name} ${ngo.city || ""} ${ngo.contact_email}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
-  );
-  return (
-    <AdminShell>
-      <PageHeader
-        eyebrow="NGOs"
-        title="Organization management"
-        description="Review NGO profiles and manage backend verification state."
-      />
-      <div className="filter-row">
-        <input
-          className="search-input"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search organizations"
-          aria-label="Search organizations"
-        />
-      </div>
-      {error ? <ErrorMessage onRetry={loadNgos}>{error}</ErrorMessage> : null}
-      {notice ? <div className="success-box">{notice}</div> : null}
-      {loading ? <LoadingState message="Loading NGO records..." /> : null}
-      {!loading && !visibleNgos.length ? (
-        <div className="empty-state">No NGOs have been registered yet.</div>
-      ) : null}
-      {!loading && visibleNgos.length ? (
-        <div className="table-list">
-          {visibleNgos.map((ngo) => (
-            <div key={ngo.id} className="table-row donation-row">
-              <span>{ngo.name}</span>
-              <span>{ngo.city || "Location not provided"}</span>
-              <span
-                className={`status-pill ${ngo.verified ? "status-matched" : "status-submitted"}`}
-              >
-                {ngo.verified ? "Verified" : "Unverified"}
-              </span>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => updateVerification(ngo)}
-                disabled={updatingId === ngo.id}
-              >
-                {updatingId === ngo.id
-                  ? "Saving..."
-                  : ngo.verified
-                    ? "Unverify"
-                    : "Verify"}
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => openDetails(ngo)}
-              >
-                Details
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {selectedNgo ? (
-        <div className="detail-panel">
-          <div className="section-heading">
-            <h2>{selectedNgo.profile.name}</h2>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => setSelectedNgo(null)}
-            >
-              Close
-            </button>
-          </div>
-          <p>{selectedNgo.profile.city || "Location not provided"}</p>
-          <p>{selectedNgo.profile.contact_email}</p>
-          <p>{selectedNgo.profile.contact_phone || "Phone not provided"}</p>
-          <p>
-            Verification:{" "}
-            {selectedNgo.profile.verified ? "Verified" : "Unverified"}
-          </p>
-          <h3>Demands</h3>
-          {selectedNgo.demands.length ? (
-            <ul className="stack-list">
-              {selectedNgo.demands.map((demand) => (
-                <li key={demand.id}>
-                  {demand.class_name}: {demand.quantity_needed} needed, priority{" "}
-                  {demand.priority}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted-text">No demands are currently recorded.</p>
-          )}
-        </div>
-      ) : null}
-    </AdminShell>
-  );
+  const { t, i18n } = useTranslation();
+  const [ngos, setNgos] = useState([]); const [demandsByNgo, setDemandsByNgo] = useState({}); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [updatingId, setUpdatingId] = useState(""); const [selectedNgo, setSelectedNgo] = useState(null); const [tab, setTab] = useState("overview"); const [query, setQuery] = useState(""); const [verification, setVerification] = useState("all"); const [city, setCity] = useState("all"); const [sort, setSort] = useState("newest"); const [page, setPage] = useState(1); const pageSize = 5;
+  const loadNgos = useCallback(async () => { setLoading(true); setError(""); try { const data = await api.get("/api/ngos"); const list = Array.isArray(data) ? data : []; setNgos(list); const results = await Promise.allSettled(list.map(async (ngo) => [ngo.id, await api.get(`/api/ngos/${ngo.id}/demands`)])); setDemandsByNgo(Object.fromEntries(results.filter((result) => result.status === "fulfilled").map((result) => result.value))); } catch (err) { setError(t("errors.generic")); } finally { setLoading(false); } }, [t]);
+  useEffect(() => { loadNgos(); }, [loadNgos]);
+  useEffect(() => { if (!selectedNgo) return undefined; const close = (event) => { if (event.key === "Escape") setSelectedNgo(null); }; window.addEventListener("keydown", close); return () => window.removeEventListener("keydown", close); }, [selectedNgo]);
+  const cities = useMemo(() => [...new Set(ngos.map((ngo) => ngo.city).filter(Boolean))].sort(), [ngos]);
+  const filteredNgos = useMemo(() => { const needle = query.trim().toLowerCase(); return [...ngos].filter((ngo) => { const name = ngo.name || ngo.organization_name || ""; const email = ngo.contact_email || ngo.email || ""; const searchable = `${name} ${email} ${ngo.city || ""}`.toLowerCase(); return (!needle || searchable.includes(needle)) && (verification === "all" || (verification === "verified" ? ngo.verified : !ngo.verified)) && (city === "all" || ngo.city === city); }).sort((a, b) => sort === "name" ? String(a.name || a.organization_name).localeCompare(String(b.name || b.organization_name)) : new Date(b.created_at || 0) - new Date(a.created_at || 0)); }, [city, ngos, query, sort, verification]);
+  const pageCount = Math.max(1, Math.ceil(filteredNgos.length / pageSize)); const currentPage = Math.min(page, pageCount); const visibleNgos = filteredNgos.slice((currentPage - 1) * pageSize, currentPage * pageSize); const verifiedCount = ngos.filter((ngo) => ngo.verified).length; const totalDemands = Object.values(demandsByNgo).reduce((total, demands) => total + demands.length, 0); const selectedDemands = selectedNgo ? demandsByNgo[selectedNgo.id] || [] : [];
+  const toggleVerification = async (ngo) => { setUpdatingId(ngo.id); setError(""); try { const updated = await api.setNgoVerification(ngo.id, !ngo.verified); setNgos((current) => current.map((item) => item.id === ngo.id ? updated : item)); setSelectedNgo((current) => current?.id === ngo.id ? updated : current); } catch (err) { setError(t("errors.generic")); } finally { setUpdatingId(""); } };
+  const ngoName = selectedNgo?.name || selectedNgo?.organization_name || t("admin.ngos.unknown", { defaultValue: "Unknown NGO" });
+
+  return <AdminShell><div className="admin-ngos-page">
+    <PageHeader eyebrow={t("navigation.ngos")} title={t("admin.ngos.title", { defaultValue: "All NGOs" })} description={t("admin.ngos.description", { defaultValue: "View registered NGOs and manage verification." })} action={<img className="admin-ngos-banner" src={ngosBanner} alt="" aria-hidden="true" />} />
+    <section className="admin-ngos-stats"><article className="admin-ngo-stat stat-green"><span><i className="fi fi-rr-users" /></span><div><small>{t("admin.ngos.total", { defaultValue: "Total NGOs" })}</small><strong>{ngos.length}</strong></div></article><article className="admin-ngo-stat stat-blue"><span><i className="fi fi-rr-shield-check" /></span><div><small>{t("admin.ngos.verified", { defaultValue: "Verified NGOs" })}</small><strong>{verifiedCount}</strong><em>{ngos.length ? Math.round((verifiedCount / ngos.length) * 100) : 0}% verified</em><b><i style={{ width: `${ngos.length ? (verifiedCount / ngos.length) * 100 : 0}%` }} /></b></div></article><article className="admin-ngo-stat stat-orange"><span><i className="fi fi-rr-clock" /></span><div><small>{t("admin.ngos.unverified", { defaultValue: "Unverified NGOs" })}</small><strong>{ngos.length - verifiedCount}</strong><em>{ngos.length ? Math.round(((ngos.length - verifiedCount) / ngos.length) * 100) : 0}% pending</em><b><i style={{ width: `${ngos.length ? ((ngos.length - verifiedCount) / ngos.length) * 100 : 0}%` }} /></b></div></article><article className="admin-ngo-stat stat-purple"><span><i className="fi fi-rr-building" /></span><div><small>{t("admin.ngos.totalDemands", { defaultValue: "Total Demands" })}</small><strong>{totalDemands}</strong><em>{t("admin.ngos.liveData", { defaultValue: "From NGO records" })}</em></div></article></section>
+    <section className="admin-ngos-filters"><label className="admin-ngos-search"><i className="fi fi-rr-search" /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={t("admin.ngos.search", { defaultValue: "Search by NGO name, email, or city..." })} /></label><label><span>{t("admin.ngos.verificationFilter", { defaultValue: "Verification" })}</span><select value={verification} onChange={(event) => { setVerification(event.target.value); setPage(1); }}><option value="all">{t("admin.ngos.allNgos", { defaultValue: "All NGOs" })}</option><option value="verified">{t("admin.verified", { defaultValue: "Verified" })}</option><option value="unverified">{t("admin.unverified", { defaultValue: "Unverified" })}</option></select></label><label><span>{t("admin.ngos.cityFilter", { defaultValue: "City" })}</span><select value={city} onChange={(event) => { setCity(event.target.value); setPage(1); }}><option value="all">{t("admin.ngos.allCities", { defaultValue: "All cities" })}</option>{cities.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label><span>{t("admin.ngos.sortBy", { defaultValue: "Sort by" })}</span><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="newest">{t("admin.ngos.newest", { defaultValue: "Newest first" })}</option><option value="name">{t("admin.ngos.nameSort", { defaultValue: "Name" })}</option></select></label></section>
+    {error ? <ErrorMessage onRetry={loadNgos}>{error}</ErrorMessage> : null}{loading ? <LoadingState message={t("common.loading")} /> : null}{!loading && !error && !filteredNgos.length ? <EmptyState title={t("admin.ngos.empty")} /> : null}
+    {!loading && !error && filteredNgos.length ? <><section className="admin-ngos-table"><div className="admin-ngos-table-head"><span>#</span><span>{t("admin.ngos.ngo", { defaultValue: "NGO" })}</span><span>{t("admin.ngos.contact", { defaultValue: "Contact" })}</span><span>{t("admin.ngos.location", { defaultValue: "Location" })}</span><span>{t("admin.ngos.joined", { defaultValue: "Joined On" })}</span><span>{t("admin.ngos.demands", { defaultValue: "Demands" })}</span><span>{t("admin.ngos.status", { defaultValue: "Status" })}</span><span>{t("admin.ngos.actions", { defaultValue: "Actions" })}</span></div>{visibleNgos.map((ngo, index) => { const name = ngo.name || ngo.organization_name || "N/A"; const demands = demandsByNgo[ngo.id] || []; return <article className="admin-ngo-row" key={ngo.id}><div className="admin-ngo-index">{(currentPage - 1) * pageSize + index + 1}</div><div className="admin-ngo-identity"><span className="admin-ngo-avatar">{initials(name)}</span><strong>{name}</strong></div><div className="admin-ngo-contact"><span><i className="fi fi-rr-envelope" />{ngo.contact_email || ngo.email || "N/A"}</span><span><i className="fi fi-rr-phone-call" />{ngo.contact_phone || ngo.phone || "N/A"}</span></div><div className="admin-ngo-location"><i className="fi fi-rr-marker" />{ngo.city || "N/A"}</div><time className="admin-ngo-joined"><i className="fi fi-rr-calendar" />{formatDate(ngo.created_at, i18n.resolvedLanguage, { day: "2-digit", month: "short", year: "numeric" })}</time><div className="admin-ngo-demands-count"><i className="fi fi-rr-box" />{demands.length}</div><span className={`admin-ngo-verification ${ngo.verified ? "verified" : "unverified"}`}><i />{ngo.verified ? t("admin.verified", { defaultValue: "Verified" }) : t("admin.unverified", { defaultValue: "Unverified" })}</span><div className="admin-ngo-actions"><button type="button" className="admin-ngo-details-button" onClick={() => { setSelectedNgo(ngo); setTab("overview"); }}><i className="fi fi-rr-eye" />{t("admin.ngos.viewDetails", { defaultValue: "View Details" })}</button><button type="button" className={`admin-ngo-verify-button ${ngo.verified ? "is-verified" : ""}`} onClick={() => toggleVerification(ngo)} disabled={Boolean(updatingId)}><i className={`fi ${ngo.verified ? "fi-rr-minus-circle" : "fi-rr-check"}`} />{updatingId === ngo.id ? t("common.loading") : ngo.verified ? t("admin.unverify", { defaultValue: "Unverify" }) : t("admin.verify", { defaultValue: "Verify" })}</button></div></article>; })}</section><footer className="admin-ngos-pagination"><span>{t("admin.ngos.showing", { defaultValue: "Showing" })} <strong>{(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filteredNgos.length)}</strong> {t("admin.ngos.of", { defaultValue: "of" })} <strong>{filteredNgos.length}</strong> {t("admin.ngos.ngos", { defaultValue: "NGOs" })}</span><div><button type="button" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={currentPage === 1}>‹</button>{Array.from({ length: pageCount }, (_, index) => index + 1).slice(0, 5).map((value) => <button type="button" className={value === currentPage ? "active" : ""} key={value} onClick={() => setPage(value)}>{value}</button>)}<button type="button" onClick={() => setPage((value) => Math.min(pageCount, value + 1))} disabled={currentPage === pageCount}>›</button></div></footer></> : null}
+    {selectedNgo ? <div className="admin-ngo-drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSelectedNgo(null)}><aside className="admin-ngo-drawer" role="dialog" aria-modal="true" aria-labelledby="admin-ngo-details-title"><header><h2 id="admin-ngo-details-title">{t("admin.ngos.details", { defaultValue: "NGO Details" })}</h2><button type="button" onClick={() => setSelectedNgo(null)} aria-label={t("common.close")}><i className="fi fi-rr-cross-small" /></button></header><div className="admin-ngo-drawer-profile"><span className="admin-ngo-avatar large">{initials(ngoName)}</span><div><h3>{ngoName}</h3><span className={`admin-ngo-verification ${selectedNgo.verified ? "verified" : "unverified"}`}><i />{selectedNgo.verified ? t("admin.verified", { defaultValue: "Verified" }) : t("admin.unverified", { defaultValue: "Unverified" })}</span><p><i className="fi fi-rr-envelope" />{selectedNgo.contact_email || selectedNgo.email || "N/A"}</p><p><i className="fi fi-rr-phone-call" />{selectedNgo.contact_phone || selectedNgo.phone || "N/A"}</p></div></div><nav className="admin-ngo-drawer-tabs"><button type="button" className={tab === "overview" ? "active" : ""} onClick={() => setTab("overview")}>{t("admin.ngos.overview", { defaultValue: "Overview" })}</button><button type="button" className={tab === "demands" ? "active" : ""} onClick={() => setTab("demands")}>{t("admin.ngos.recentDemands", { defaultValue: "Recent Demands" })}</button><button type="button" className={tab === "activity" ? "active" : ""} onClick={() => setTab("activity")}>{t("admin.ngos.activity", { defaultValue: "Activity" })}</button></nav>{tab === "overview" ? <div className="admin-ngo-drawer-content"><section className="admin-ngo-detail-card"><h3><i className="fi fi-rr-user" />{t("admin.ngos.basicInformation", { defaultValue: "Basic Information" })}</h3><dl><div><dt>{t("admin.ngos.ngoName", { defaultValue: "NGO Name" })}</dt><dd>{ngoName}</dd></div><div><dt>Email</dt><dd>{selectedNgo.contact_email || selectedNgo.email || "N/A"}</dd></div><div><dt>{t("admin.ngos.phone", { defaultValue: "Phone" })}</dt><dd>{selectedNgo.contact_phone || selectedNgo.phone || "N/A"}</dd></div><div><dt>{t("admin.ngos.city", { defaultValue: "City" })}</dt><dd>{selectedNgo.city || "N/A"}</dd></div><div><dt>{t("admin.ngos.joinedOn", { defaultValue: "Joined On" })}</dt><dd>{formatDate(selectedNgo.created_at, i18n.resolvedLanguage, { day: "2-digit", month: "long", year: "numeric" })}</dd></div></dl></section><section className="admin-ngo-detail-card"><h3><i className="fi fi-rr-users" />{t("admin.ngos.impactOverview", { defaultValue: "Impact Overview" })}</h3><div className="admin-ngo-summary-grid"><span><strong>{selectedDemands.length}</strong><small>{t("admin.ngos.totalDemands", { defaultValue: "Total Demands" })}</small></span><span><strong>{selectedDemands.reduce((total, demand) => total + (Number(demand.quantity_needed) || 0), 0)}</strong><small>{t("admin.ngos.totalRequiredItems", { defaultValue: "Total Required Items" })}</small></span></div></section><section className="admin-ngo-detail-card"><h3><i className="fi fi-rr-shield-check" />{t("admin.ngos.verificationStatus", { defaultValue: "Verification Status" })}</h3><div className={`admin-ngo-verification-message ${selectedNgo.verified ? "verified" : "unverified"}`}><strong>{selectedNgo.verified ? t("admin.verified", { defaultValue: "Verified" }) : t("admin.unverified", { defaultValue: "Unverified" })}</strong><p>{selectedNgo.verified ? t("admin.ngos.verifiedDescription", { defaultValue: "This NGO is verified and can create demands." }) : t("admin.ngos.unverifiedDescription", { defaultValue: "This NGO is not yet verified." })}</p></div></section><section className="admin-ngo-detail-card"><h3><i className="fi fi-rr-marker" />{t("admin.ngos.location", { defaultValue: "Location" })}</h3><p className="admin-ngo-location-detail">{selectedNgo.address || selectedNgo.city || "N/A"}</p></section></div> : tab === "demands" ? <div className="admin-ngo-demand-list">{selectedDemands.length ? selectedDemands.map((demand) => <div key={demand.id}><span><i className="fi fi-rr-box" /></span><div><strong>{demand.class_name}</strong><small>{demand.subcategory || t("admin.ngos.notSpecified", { defaultValue: "Not specified" })} · {demand.quantity_needed} required</small></div><em>{demand.fulfillment_status || "active"}</em></div>) : <p>{t("admin.ngos.noDemands", { defaultValue: "No demands available." })}</p>}</div> : <div className="admin-ngo-activity"><p>{t("admin.ngos.activityDescription", { defaultValue: "Verification and demand activity is shown from the current NGO records." })}</p><span><i className="fi fi-rr-calendar" />{t("admin.ngos.lastUpdated", { defaultValue: "Record joined" })}: {formatDate(selectedNgo.created_at, i18n.resolvedLanguage, { day: "2-digit", month: "short", year: "numeric" })}</span></div>}<footer><button type="button" className="admin-ngo-close-button" onClick={() => setSelectedNgo(null)}>{t("common.close", { defaultValue: "Close" })}</button><button type="button" className="admin-ngo-verify-drawer-button" onClick={() => toggleVerification(selectedNgo)} disabled={Boolean(updatingId)}><i className={`fi ${selectedNgo.verified ? "fi-rr-minus-circle" : "fi-rr-check"}`} />{updatingId === selectedNgo.id ? t("common.loading") : selectedNgo.verified ? t("admin.unverify", { defaultValue: "Unverify NGO" }) : t("admin.verify", { defaultValue: "Verify NGO" })}</button></footer></aside></div> : null}
+  </div></AdminShell>;
 }

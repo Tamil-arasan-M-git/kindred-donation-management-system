@@ -49,6 +49,7 @@ export function AuthProvider({ children }) {
         setUser(nextUser);
         localStorage.setItem("kindred_user", JSON.stringify(nextUser));
       } catch {
+        await api.clearPrivateCache().catch(() => {});
         localStorage.removeItem("kindred_token");
         localStorage.removeItem("kindred_user");
         setUser(null);
@@ -78,6 +79,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    api.clearPrivateCache().catch(() => {});
     localStorage.removeItem("kindred_token");
     localStorage.removeItem("kindred_user");
     setUser(null);

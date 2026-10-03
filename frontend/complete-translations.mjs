@@ -1,0 +1,458 @@
+import fs from "node:fs";
+
+const additions = {
+  en: {
+    donorReview: {
+      category: "Category",
+      subcategory: "Subcategory",
+      count: "Count",
+      confidence: "Confidence: {{value}}",
+      notAvailable: "Not available",
+      reviewedByDonor: "Reviewed by donor",
+    },
+    ngoDashboard: {
+      subtitle:
+        "Manage your demands and review suitable incoming donations. Together, we can turn kindness into real impact.",
+      quickActions: "Quick Actions",
+      quickActionsDesc: "Jump to the sections you use most often.",
+      manageDemands: "Create, edit, or remove resource requirements.",
+      reviewMatches: "Review incoming donations and match status.",
+      trackDonations: "View donations linked to your organization.",
+      recentDemands: "Recent Demands",
+      recentDonations: "Recent Donations",
+      viewAll: "View all",
+      noSubcategory: "No subcategory",
+      quantity: "{{count}} items",
+      submitted: "Submitted",
+      impactEyebrow: "Small details",
+      impactTitle: "A bigger impact.",
+      impactDescription: "Your efforts connect resources with real needs.",
+      impactImageAlt:
+        "Communities thrive when people care; your efforts connect resources with real needs.",
+    },
+    ngoDemands: {
+      category: "Category",
+      subcategory: "Subcategory (optional)",
+      quantityNeeded: "Quantity Needed",
+      priority: "Priority (1 = Low, 5 = Urgent)",
+      neededUntil: "Needed Until",
+      notSpecified: "Not specified",
+      noExpiry: "No expiry",
+      deleteConfirm: "Delete this demand? This cannot be undone.",
+      priorityLabels: {
+        low: "Low",
+        belowAverage: "Below average",
+        normal: "Normal",
+        high: "High",
+        urgent: "Urgent",
+      },
+    },
+    ngoStaff: {
+      deleteConfirm:
+        "Permanently delete this staff member? Staff with operation history cannot be deleted.",
+    },
+    ngoMatches: {
+      description: "Review AI-matched donations.",
+      donationMatch: "Donation match",
+      donationId: "Donation #{{id}}",
+      matchStrength: "Match strength",
+      donationItems: "Donation items",
+      quantity: "Quantity",
+      yourDemand: "Your demand",
+      needs: "Needs",
+      notSpecified: "Not specified",
+      anySubcategory: "Any subcategory",
+      itemsUnavailable: "Donation items are unavailable.",
+      viewDetails: "View match details",
+    },
+    ngoDonationDetail: {
+      breadcrumb: "Breadcrumb",
+      donations: "Donations",
+      title: "Donation detail",
+      description: "Manage this donation through its lifecycle.",
+      loading: "Loading donation details...",
+      loadError: "Donation details could not be loaded.",
+      operationError: "Operation could not be scheduled.",
+      pickupUpdateError: "Pickup time could not be updated.",
+      donation: "Donation",
+      information: "Donation information",
+      item: "Item",
+      other: "Other",
+      itemsUnavailable: "Items unavailable",
+      quantity: "Quantity",
+      oneItem: "item",
+      manyItems: "items",
+      reviewedByDonor: "Reviewed by donor",
+      donor: "Donor",
+      operations: "Operations",
+      operationsDescription: "Manage packaging, pickup, and delivery tasks.",
+      noOperations: "No operations assigned yet.",
+      unassigned: "Unassigned",
+      notScheduled: "Not scheduled",
+      noScheduleSet: "No schedule set",
+      alreadyScheduled:
+        "This {{operation}} process has already been scheduled. It cannot be scheduled again.",
+      staff: "Staff",
+      selectStaff: "Select staff",
+      date: "Date",
+      time: "Time",
+      notes: "Notes",
+      saving: "Saving...",
+      schedulePackaging: "Schedule Packaging",
+      schedulePickup: "Schedule Pickup",
+      scheduleDelivery: "Schedule Delivery",
+      pickup: "Pickup",
+      pickupDescription: "Collection scheduling and updates.",
+      pickupUnavailable: "No pickup information is available yet.",
+      scheduled: "Scheduled",
+      changePickupTime: "Change pickup time",
+      updatePickupTime: "Update pickup time",
+      updating: "Updating...",
+      schedulePickupFirst:
+        "Schedule the donation pickup before assigning a pickup operation.",
+      futurePickupError: "Choose a future pickup date and time.",
+      pickupUpdated: "Pickup time updated. You can now assign pickup staff.",
+      operationScheduled: "{{operation}} operation scheduled.",
+      donationUpdated: "Donation status updated successfully.",
+      confirmAction: "Are you sure you want to {{action}}?",
+      actionError: "This donation action could not be completed.",
+    },
+    operationalActions: {
+      notifyPackaging: "Notify Packaging",
+      markCollected: "Mark Collected",
+      markDelivered: "Mark Delivered",
+      acknowledgeDonation: "Acknowledge Donation",
+    },
+    adminMatches: {
+      description: "Review matched donations across organizations.",
+      matchStrength: "Match strength",
+    },
+    adminGeneral: {
+      verificationStatus: "Verification status",
+      verified: "Verified",
+      unverified: "Unverified",
+      verify: "Verify",
+      unverify: "Remove verification",
+    },
+    common: {
+      activate: "Activate",
+      deactivate: "Deactivate",
+      breadcrumb: "Breadcrumb",
+    },
+  },
+  hi: {
+    donorReview: {
+      category: "श्रेणी",
+      subcategory: "उपश्रेणी",
+      count: "संख्या",
+      confidence: "विश्वास: {{value}}",
+      notAvailable: "उपलब्ध नहीं",
+      reviewedByDonor: "दाता द्वारा समीक्षा की गई",
+    },
+    ngoDashboard: {
+      subtitle:
+        "अपनी ज़रूरतें प्रबंधित करें और उपयुक्त आने वाले दान की समीक्षा करें। मिलकर हम दयालुता को वास्तविक प्रभाव में बदल सकते हैं।",
+      quickActions: "त्वरित कार्य",
+      quickActionsDesc: "उन अनुभागों पर जाएँ जिनका आप अक्सर उपयोग करते हैं।",
+      manageDemands: "संसाधन आवश्यकताएँ बनाएँ, संपादित करें या हटाएँ।",
+      reviewMatches: "आने वाले दान और मिलान की स्थिति देखें।",
+      trackDonations: "अपने संगठन से जुड़े दान देखें।",
+      recentDemands: "हाल की ज़रूरतें",
+      recentDonations: "हाल के दान",
+      viewAll: "सभी देखें",
+      noSubcategory: "कोई उपश्रेणी नहीं",
+      quantity: "{{count}} वस्तुएँ",
+      submitted: "जमा किया गया",
+      impactEyebrow: "छोटी बातें",
+      impactTitle: "बड़ा प्रभाव।",
+      impactDescription:
+        "आपके प्रयास संसाधनों को वास्तविक ज़रूरतों से जोड़ते हैं।",
+      impactImageAlt:
+        "जब लोग परवाह करते हैं तो समुदाय आगे बढ़ते हैं; आपके प्रयास संसाधनों को वास्तविक ज़रूरतों से जोड़ते हैं।",
+    },
+    ngoDemands: {
+      category: "श्रेणी",
+      subcategory: "उपश्रेणी (वैकल्पिक)",
+      quantityNeeded: "आवश्यक मात्रा",
+      priority: "प्राथमिकता (1 = कम, 5 = अत्यावश्यक)",
+      neededUntil: "आवश्यकता की अंतिम तिथि",
+      notSpecified: "निर्दिष्ट नहीं",
+      noExpiry: "कोई समाप्ति नहीं",
+      deleteConfirm: "यह आवश्यकता हटाएँ? इसे वापस नहीं किया जा सकता।",
+      priorityLabels: {
+        low: "कम",
+        belowAverage: "औसत से कम",
+        normal: "सामान्य",
+        high: "उच्च",
+        urgent: "अत्यावश्यक",
+      },
+    },
+    ngoStaff: {
+      deleteConfirm:
+        "इस कर्मचारी को स्थायी रूप से हटाएँ? संचालन इतिहास वाले कर्मचारियों को हटाया नहीं जा सकता।",
+    },
+    ngoMatches: {
+      description: "AI द्वारा मिलाए गए दानों की समीक्षा करें।",
+      donationMatch: "दान मिलान",
+      donationId: "दान #{{id}}",
+      matchStrength: "मिलान की मजबूती",
+      donationItems: "दान की वस्तुएँ",
+      quantity: "मात्रा",
+      yourDemand: "आपकी आवश्यकता",
+      needs: "आवश्यकता",
+      notSpecified: "निर्दिष्ट नहीं",
+      anySubcategory: "कोई भी उपश्रेणी",
+      itemsUnavailable: "दान की वस्तुओं की जानकारी उपलब्ध नहीं है।",
+      viewDetails: "मिलान का विवरण देखें",
+    },
+    ngoDonationDetail: {
+      breadcrumb: "नेविगेशन पथ",
+      donations: "दान",
+      title: "दान का विवरण",
+      description: "इस दान को उसके पूरे चरण में प्रबंधित करें।",
+      loading: "दान का विवरण लोड हो रहा है...",
+      loadError: "दान का विवरण लोड नहीं हो सका।",
+      operationError: "संचालन निर्धारित नहीं हो सका।",
+      pickupUpdateError: "पिकअप का समय अपडेट नहीं हो सका।",
+      donation: "दान",
+      information: "दान की जानकारी",
+      item: "वस्तु",
+      other: "अन्य",
+      itemsUnavailable: "वस्तु की जानकारी उपलब्ध नहीं",
+      quantity: "मात्रा",
+      oneItem: "वस्तु",
+      manyItems: "वस्तुएँ",
+      reviewedByDonor: "दाता द्वारा समीक्षा की गई",
+      donor: "दाता",
+      operations: "संचालन",
+      operationsDescription: "पैकिंग, पिकअप और डिलीवरी कार्य प्रबंधित करें।",
+      noOperations: "अभी कोई संचालन निर्धारित नहीं है।",
+      unassigned: "असाइन नहीं किया गया",
+      notScheduled: "निर्धारित नहीं",
+      noScheduleSet: "कोई समय निर्धारित नहीं",
+      alreadyScheduled:
+        "{{operation}} प्रक्रिया पहले ही निर्धारित है। इसे दोबारा निर्धारित नहीं किया जा सकता।",
+      staff: "कर्मचारी",
+      selectStaff: "कर्मचारी चुनें",
+      date: "तारीख",
+      time: "समय",
+      notes: "नोट्स",
+      saving: "सहेज रहा है...",
+      schedulePackaging: "पैकिंग निर्धारित करें",
+      schedulePickup: "पिकअप निर्धारित करें",
+      scheduleDelivery: "डिलीवरी निर्धारित करें",
+      pickup: "पिकअप",
+      pickupDescription: "संग्रह का समय और अपडेट।",
+      pickupUnavailable: "अभी पिकअप की जानकारी उपलब्ध नहीं है।",
+      scheduled: "निर्धारित",
+      changePickupTime: "पिकअप का समय बदलें",
+      updatePickupTime: "पिकअप का समय अपडेट करें",
+      updating: "अपडेट हो रहा है...",
+      schedulePickupFirst:
+        "पिकअप संचालन असाइन करने से पहले दान का पिकअप निर्धारित करें।",
+      futurePickupError: "भविष्य की पिकअप तारीख और समय चुनें।",
+      pickupUpdated:
+        "पिकअप का समय अपडेट हो गया। अब आप पिकअप कर्मचारी असाइन कर सकते हैं।",
+      operationScheduled: "{{operation}} संचालन निर्धारित हो गया।",
+      donationUpdated: "दान की स्थिति सफलतापूर्वक अपडेट हुई।",
+      confirmAction: "क्या आप {{action}} करना चाहते हैं?",
+      actionError: "दान की यह कार्रवाई पूरी नहीं हो सकी।",
+    },
+    operationalActions: {
+      notifyPackaging: "पैकिंग की सूचना दें",
+      markCollected: "संग्रहित चिह्नित करें",
+      markDelivered: "डिलीवर चिह्नित करें",
+      acknowledgeDonation: "दान की पुष्टि करें",
+    },
+    adminMatches: {
+      description: "संगठनों के बीच मिलान किए गए दानों की समीक्षा करें।",
+      matchStrength: "मिलान की मजबूती",
+    },
+    adminGeneral: {
+      verificationStatus: "सत्यापन स्थिति",
+      verified: "सत्यापित",
+      unverified: "असत्यापित",
+      verify: "सत्यापित करें",
+      unverify: "सत्यापन हटाएँ",
+    },
+    common: {
+      activate: "सक्रिय करें",
+      deactivate: "निष्क्रिय करें",
+      breadcrumb: "ब्रेडक्रंब",
+    },
+  },
+  bn: {
+    donorReview: {
+      category: "বিভাগ",
+      subcategory: "উপবিভাগ",
+      count: "সংখ্যা",
+      confidence: "নিশ্চয়তা: {{value}}",
+      notAvailable: "পাওয়া যায়নি",
+      reviewedByDonor: "দাতা পর্যালোচনা করেছেন",
+    },
+    ngoDashboard: {
+      subtitle:
+        "আপনার চাহিদা পরিচালনা করুন এবং উপযুক্ত আসন্ন অনুদান পর্যালোচনা করুন। একসঙ্গে আমরা সহমর্মিতাকে বাস্তব প্রভাবে রূপ দিতে পারি।",
+      quickActions: "দ্রুত কাজ",
+      quickActionsDesc: "আপনি প্রায়শই ব্যবহার করেন এমন বিভাগে যান।",
+      manageDemands: "সম্পদের চাহিদা তৈরি, সম্পাদনা বা মুছুন।",
+      reviewMatches: "আসন্ন অনুদান ও মিলের অবস্থা পর্যালোচনা করুন।",
+      trackDonations: "আপনার সংস্থার সঙ্গে যুক্ত অনুদান দেখুন।",
+      recentDemands: "সাম্প্রতিক চাহিদা",
+      recentDonations: "সাম্প্রতিক অনুদান",
+      viewAll: "সব দেখুন",
+      noSubcategory: "কোনো উপশ্রেণি নেই",
+      quantity: "{{count}}টি আইটেম",
+      submitted: "জমা দেওয়া হয়েছে",
+      impactEyebrow: "ছোট বিবরণ",
+      impactTitle: "বড় প্রভাব।",
+      impactDescription:
+        "আপনার প্রচেষ্টা সম্পদকে বাস্তব প্রয়োজনের সঙ্গে যুক্ত করে।",
+      impactImageAlt:
+        "মানুষ যত্ন নিলে সম্প্রদায় এগিয়ে যায়; আপনার প্রচেষ্টা সম্পদকে বাস্তব প্রয়োজনের সঙ্গে যুক্ত করে।",
+    },
+    ngoDemands: {
+      category: "বিভাগ",
+      subcategory: "উপবিভাগ (ঐচ্ছিক)",
+      quantityNeeded: "প্রয়োজনীয় পরিমাণ",
+      priority: "অগ্রাধিকার (1 = কম, 5 = জরুরি)",
+      neededUntil: "প্রয়োজনের শেষ তারিখ",
+      notSpecified: "উল্লেখ করা হয়নি",
+      noExpiry: "মেয়াদ নেই",
+      deleteConfirm: "এই চাহিদাটি মুছবেন? এটি ফিরিয়ে আনা যাবে না।",
+      priorityLabels: {
+        low: "কম",
+        belowAverage: "গড়ের নিচে",
+        normal: "স্বাভাবিক",
+        high: "উচ্চ",
+        urgent: "জরুরি",
+      },
+    },
+    ngoStaff: {
+      deleteConfirm:
+        "এই কর্মীকে স্থায়ীভাবে মুছবেন? কার্যক্রমের ইতিহাস থাকা কর্মীদের মুছা যাবে না।",
+    },
+    ngoMatches: {
+      description: "AI-মিল করা অনুদান পর্যালোচনা করুন।",
+      donationMatch: "অনুদানের মিল",
+      donationId: "অনুদান #{{id}}",
+      matchStrength: "মিলের শক্তি",
+      donationItems: "অনুদানের সামগ্রী",
+      quantity: "পরিমাণ",
+      yourDemand: "আপনার চাহিদা",
+      needs: "প্রয়োজন",
+      notSpecified: "উল্লেখ করা হয়নি",
+      anySubcategory: "যেকোনো উপবিভাগ",
+      itemsUnavailable: "অনুদানের সামগ্রীর তথ্য পাওয়া যায়নি।",
+      viewDetails: "মিলের বিবরণ দেখুন",
+    },
+    ngoDonationDetail: {
+      breadcrumb: "নেভিগেশন পথ",
+      donations: "অনুদান",
+      title: "অনুদানের বিবরণ",
+      description: "এই অনুদানটি সম্পূর্ণ প্রক্রিয়া জুড়ে পরিচালনা করুন।",
+      loading: "অনুদানের বিবরণ লোড হচ্ছে...",
+      loadError: "অনুদানের বিবরণ লোড করা যায়নি।",
+      operationError: "কার্যক্রম নির্ধারণ করা যায়নি।",
+      pickupUpdateError: "পিকআপের সময় আপডেট করা যায়নি।",
+      donation: "অনুদান",
+      information: "অনুদানের তথ্য",
+      item: "সামগ্রী",
+      other: "অন্যান্য",
+      itemsUnavailable: "সামগ্রীর তথ্য পাওয়া যায়নি",
+      quantity: "পরিমাণ",
+      oneItem: "টি সামগ্রী",
+      manyItems: "টি সামগ্রী",
+      reviewedByDonor: "দাতা পর্যালোচনা করেছেন",
+      donor: "দাতা",
+      operations: "কার্যক্রম",
+      operationsDescription: "প্যাকিং, পিকআপ ও ডেলিভারির কাজ পরিচালনা করুন।",
+      noOperations: "এখনও কোনো কার্যক্রম বরাদ্দ নেই।",
+      unassigned: "বরাদ্দ করা হয়নি",
+      notScheduled: "নির্ধারিত নয়",
+      noScheduleSet: "কোনো সময় নির্ধারিত নেই",
+      alreadyScheduled:
+        "{{operation}} প্রক্রিয়াটি ইতিমধ্যে নির্ধারিত হয়েছে। এটি আবার নির্ধারণ করা যাবে না।",
+      staff: "কর্মী",
+      selectStaff: "কর্মী নির্বাচন করুন",
+      date: "তারিখ",
+      time: "সময়",
+      notes: "নোট",
+      saving: "সংরক্ষণ হচ্ছে...",
+      schedulePackaging: "প্যাকিং নির্ধারণ করুন",
+      schedulePickup: "পিকআপ নির্ধারণ করুন",
+      scheduleDelivery: "ডেলিভারি নির্ধারণ করুন",
+      pickup: "পিকআপ",
+      pickupDescription: "সংগ্রহের সময়সূচি ও আপডেট।",
+      pickupUnavailable: "এখনও পিকআপের তথ্য পাওয়া যায়নি।",
+      scheduled: "নির্ধারিত",
+      changePickupTime: "পিকআপের সময় পরিবর্তন করুন",
+      updatePickupTime: "পিকআপের সময় আপডেট করুন",
+      updating: "আপডেট হচ্ছে...",
+      schedulePickupFirst:
+        "পিকআপ কার্যক্রম বরাদ্দ করার আগে অনুদানের পিকআপ নির্ধারণ করুন।",
+      futurePickupError: "ভবিষ্যতের পিকআপের তারিখ ও সময় নির্বাচন করুন।",
+      pickupUpdated:
+        "পিকআপের সময় আপডেট হয়েছে। এখন পিকআপ কর্মী বরাদ্দ করতে পারেন।",
+      operationScheduled: "{{operation}} কার্যক্রম নির্ধারিত হয়েছে।",
+      donationUpdated: "অনুদানের অবস্থা সফলভাবে আপডেট হয়েছে।",
+      confirmAction: "আপনি কি {{action}} করতে চান?",
+      actionError: "এই অনুদান কার্যক্রম সম্পন্ন করা যায়নি।",
+    },
+    operationalActions: {
+      notifyPackaging: "প্যাকিংয়ের বিজ্ঞপ্তি দিন",
+      markCollected: "সংগৃহীত হিসেবে চিহ্নিত করুন",
+      markDelivered: "ডেলিভার হয়েছে হিসেবে চিহ্নিত করুন",
+      acknowledgeDonation: "অনুদান নিশ্চিত করুন",
+    },
+    adminMatches: {
+      description: "সংস্থাগুলোর মধ্যে মিল হওয়া অনুদান পর্যালোচনা করুন।",
+      matchStrength: "মিলের শক্তি",
+    },
+    adminGeneral: {
+      verificationStatus: "যাচাইকরণের অবস্থা",
+      verified: "যাচাইকৃত",
+      unverified: "যাচাই হয়নি",
+      verify: "যাচাই করুন",
+      unverify: "যাচাইকরণ সরান",
+    },
+    common: {
+      activate: "সক্রিয় করুন",
+      deactivate: "নিষ্ক্রিয় করুন",
+      breadcrumb: "ব্রেডক্রাম্ব",
+    },
+  },
+};
+
+function merge(target, source) {
+  for (const [key, value] of Object.entries(source)) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      target[key] ||= {};
+      merge(target[key], value);
+    } else if (target[key] === undefined) target[key] = value;
+  }
+}
+
+for (const lang of ["en", "hi", "bn"]) {
+  const path = `src/i18n/locales/${lang}/translation.json`;
+  const data = JSON.parse(fs.readFileSync(path, "utf8"));
+  merge(data.donor.review, additions[lang].donorReview);
+  merge(data.ngo.dashboard, additions[lang].ngoDashboard);
+  merge(data.ngo.demands, additions[lang].ngoDemands);
+  merge(data.ngo.staff, additions[lang].ngoStaff);
+  merge(data.ngo.matches, additions[lang].ngoMatches);
+  data.ngo.donationDetail ||= {};
+  merge(data.ngo.donationDetail, additions[lang].ngoDonationDetail);
+  data.ngo.operationalActions ||= {};
+  merge(data.ngo.operationalActions, additions[lang].operationalActions);
+  data.admin.matches ||= {};
+  merge(data.admin.matches, additions[lang].adminMatches);
+  data.admin ||= {};
+  merge(data.admin, additions[lang].adminGeneral);
+  merge(data.common, additions[lang].common);
+  merge(
+    data.ngo.demands.priorityLabels,
+    additions[lang].ngoDemands.priorityLabels,
+  );
+  fs.writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`);
+}

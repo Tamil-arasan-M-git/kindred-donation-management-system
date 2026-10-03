@@ -1,0 +1,8 @@
+.pwa-status-stack { position: fixed; z-index: 1200; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); left: 16px; display: grid; justify-items: center; gap: 8px; pointer-events: none; }
+.pwa-status-banner { display: flex; align-items: center; gap: 10px; max-width: min(620px, 100%); padding: 11px 14px; border: 1px solid #dce7df; border-radius: 12px; background: #fffefa; color: #1d3d31; box-shadow: 0 8px 24px #163f2d1a; font-size: .82rem; pointer-events: auto; }
+.pwa-status-banner button { border: 0; border-radius: 8px; padding: 7px 11px; background: #075440; color: #fff; font-weight: 700; cursor: pointer; }
+.pwa-status-banner button.quiet { background: transparent; color: #396052; }
+.pwa-status-banner.offline { border-color: #f0c6bd; background: #fff5f1; color: #8f4237; }
+.pwa-status-banner.update { border-color: #c9dfd0; }
+.pwa-status-banner.install { border-color: #c9dfd0; }
+@media (max-width: 480px) { .pwa-status-stack { right: 10px; left: 10px; }.pwa-status-banner { align-items: flex-start; flex-wrap: wrap; width: 100%; box-sizing: border-box; font-size: .76rem; }.pwa-status-banner span { flex: 1 1 100%; }.pwa-status-banner button { min-height: 38px; } }

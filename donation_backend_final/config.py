@@ -19,8 +19,11 @@ local_dev_origins = [
     "http://127.0.0.1:5174",
 ]
 CORS_ALLOWED_ORIGINS = list(dict.fromkeys(configured_origins + local_dev_origins))
-USE_CUSTOM_MODEL = os.getenv("USE_CUSTOM_MODEL", "false").lower() == "true"
-CUSTOM_MODEL_PATH = os.getenv("CUSTOM_MODEL_PATH", "runs/detect/donation_items_yolov8n/weights/best.pt")
+USE_CUSTOM_MODEL = os.getenv("USE_CUSTOM_MODEL", "true").lower() == "true"
+CUSTOM_MODEL_PATH = os.getenv(
+    "CUSTOM_MODEL_PATH",
+    r"C:\Users\Tamilarasan M\Downloads\best (1).pt"
+)
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", "10485760"))
 EMAIL_HOST = os.getenv("EMAIL_HOST", "")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT") or "587")

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../../context/AuthContext";
 import api from "../../api/client";
 import EmptyState from "../../components/common/EmptyState";
@@ -8,30 +9,36 @@ import StatusBadge from "../../components/common/StatusBadge";
 import PageHeader from "../../components/layout/PageHeader";
 import { loadCurrentNgo } from "./ngoUtils";
 import NGOShell from "./NGOShell";
+import MatchDetailsModal from "../../components/matches/MatchDetailsModal";
+import "./NGOMatchesPage.css";
 
-const matchStatuses = [
-  "all",
-  "candidate",
-  "recommended",
-  "accepted",
-  "rejected",
-];
+const getMatchIcon = (item) => {
+  const category = String(
+    item?.category || item?.class_name || "",
+  ).toLowerCase();
+  if (category.includes("electronic") || category.includes("phone"))
+    return "mobile-button";
+  if (category.includes("book")) return "book-open-cover";
+  if (category.includes("cloth") || category.includes("wear")) return "shirt";
+  if (category.includes("furniture")) return "couch";
+  if (category.includes("food") || category.includes("utensil"))
+    return "utensils";
+  return "box-open";
+};
 
 export default function NGOMatchesPage() {
   const { user } = useAuth();
+  const { t } = useTranslation();
   const [ngo, setNgo] = useState(null);
   const [matches, setMatches] = useState([]);
-  const [selectedMatch, setSelectedMatch] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
-  const [actionId, setActionId] = useState("");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-
-  const canMutateMatch = (match) => {
-    if (!user || user.role !== "ngo") return false;
-    return ["candidate", "recommended"].includes(match.status);
-  };
+  const [selectedMatch, setSelectedMatch] = useState(null);
+  const categoryLabel = (value) =>
+    t(`categories.${String(value || "").toLowerCase()}`, {
+      defaultValue: value || t("ngo.matches.notSpecified"),
+    });
 
   const loadMatches = async () => {
     setLoading(true);
@@ -41,7 +48,7 @@ export default function NGOMatchesPage() {
       const query = statusFilter === "all" ? "" : `?status=${statusFilter}`;
       setMatches(await api.get(`/api/ngos/${currentNgo.id}/matches${query}`));
     } catch (err) {
-      setError(err.message || "Matches could not be loaded.");
+      setError(t("errors.generic"));
     } finally {
       setLoading(false);
     }
@@ -52,171 +59,145 @@ export default function NGOMatchesPage() {
     loadMatches();
   }, [user?.email, statusFilter]);
 
-  const openMatch = async (match) => {
-    setError("");
+  const handleAction = async (matchId, action) => {
     try {
-      setSelectedMatch(await api.get(`/api/matches/${match.id}`));
-    } catch (err) {
-      setError(err.message || "Match details could not be loaded.");
-    }
-  };
-
-  const updateMatch = async (matchId, action) => {
-    if (action === "accept" && !window.confirm("Accept this donation? This will associate it with your organization.")) return;
-    const rejectionReason = action === "reject"
-      ? window.prompt("Reject this donation? Enter an optional reason:", "")
-      : "";
-    if (action === "reject" && rejectionReason === null) return;
-    setActionId(matchId);
-    setError("");
-    setNotice("");
-    try {
-      if (action === "accept") await api.acceptMatch(matchId);
-      else await api.rejectMatch(matchId, rejectionReason || "NGO declined this recommendation");
-      setSelectedMatch(null);
+      await api.post(`/api/matches/${matchId}/${action}`);
       await loadMatches();
-      setNotice(
-        action === "accept"
-          ? "Match accepted successfully."
-          : "Match rejected.",
-      );
     } catch (err) {
-      setError(err.message || `Match could not be ${action}ed.`);
-    } finally {
-      setActionId("");
+      setError(t("errors.generic"));
     }
   };
 
   return (
     <NGOShell>
       <PageHeader
-        eyebrow="Incoming matches"
-        title="Open opportunities"
-        description="Review donation matches created from your active demands."
+        eyebrow={t("navigation.matches")}
+        title={t("ngo.matches.title")}
+        description={t("ngo.matches.description")}
       />
-      {error ? (
-        <ErrorMessage onRetry={loadMatches}>{error}</ErrorMessage>
-      ) : null}
-      {notice ? <div className="success-box">{notice}</div> : null}
-      <div className="filter-row" aria-label="Filter matches">
-        {matchStatuses.map((status) => (
-          <button
-            key={status}
-            type="button"
-            className={`filter-button ${statusFilter === status ? "selected" : ""}`}
-            onClick={() => setStatusFilter(status)}
-          >
-            {status === "all" ? "All" : status}
-          </button>
-        ))}
-      </div>
-      {loading ? <LoadingState message="Loading incoming matches..." /> : null}
+      {error ? <ErrorMessage>{error}</ErrorMessage> : null}
+      {loading ? <LoadingState message={t("common.loading")} /> : null}
       {!loading && !matches.length ? (
-        <EmptyState title="No matches found">
-          Create an active demand to let the system identify suitable incoming
-          donations.
-        </EmptyState>
+        <EmptyState title={t("ngo.matches.empty")} />
       ) : null}
       {!loading && matches.length ? (
-        <div className="card-grid">
+        <div className="ngo-match-grid">
           {matches.map((match) => (
-            <article key={match.id} className="info-card match-card">
-              <div className="match-card-top">
-                <h2>
-                  Donation{" "}
-                  {match.donation?.id?.slice(0, 8) || "reference unavailable"}
-                </h2>
+            <article key={match.id} className="ngo-match-card">
+              <div className="ngo-match-card__header">
+                <div className="ngo-match-card__art" aria-hidden="true">
+                  <i
+                    className={`fi fi-rr-${getMatchIcon(match.donation?.items?.[0])}`}
+                  />
+                </div>
+                <div className="ngo-match-card__identity">
+                  <p className="ngo-match-card__eyebrow">
+                    {t("ngo.matches.donationMatch")}
+                  </p>
+                  <h2>#{match.id.slice(0, 8).toUpperCase()}</h2>
+                </div>
                 <StatusBadge status={match.status} />
               </div>
-              <p>
-                {match.donation?.items
-                  ?.map((item) => `${item.class_name} x${item.quantity}`)
-                  .join(", ") || "Donation items unavailable"}
+              <p className="ngo-match-card__donation-id">
+                {t("ngo.matches.donationId", {
+                  id: String(match.donation?.id || match.donation_id || "")
+                    .slice(0, 8)
+                    .toUpperCase(),
+                })}
               </p>
-              <strong>
-                {typeof match.score === "number"
-                  ? `${Math.round(match.score * 100)}% match`
-                  : "Match available"}
-              </strong>
-              <p className="muted-text">
-                Review the match details before accepting or rejecting this
-                opportunity.
-              </p>
-              <div className="action-stack">
+              <div className="ngo-match-card__score">
+                <span>{t("ngo.matches.matchStrength")}</span>
+                <strong>
+                  {typeof match.score === "number"
+                    ? `${Math.round(match.score * 100)}%`
+                    : "—"}
+                </strong>
+              </div>
+              <div
+                className="ngo-match-card__score-track"
+                role="progressbar"
+                aria-label={t("ngo.matches.matchStrength")}
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow={Math.round((Number(match.score) || 0) * 100)}
+              >
+                <span
+                  style={{
+                    width: `${Math.max(0, Math.min(100, (Number(match.score) || 0) * 100))}%`,
+                  }}
+                />
+              </div>
+              <div className="ngo-match-card__details">
+                <section>
+                  <h3>{t("ngo.matches.donationItems")}</h3>
+                  {(match.donation?.items || []).length ? (
+                    match.donation.items.map((item, index) => (
+                      <p key={`${item.class_name}-${index}`}>
+                        {categoryLabel(item.category || item.class_name)}
+                        {item.subcategory
+                          ? ` / ${categoryLabel(item.subcategory)}`
+                          : ` / ${t("ngo.matches.notSpecified")}`}
+                        <span>
+                          {t("ngo.matches.quantity")}: {item.quantity}
+                        </span>
+                      </p>
+                    ))
+                  ) : (
+                    <p>{t("ngo.matches.itemsUnavailable")}</p>
+                  )}
+                </section>
+                <section>
+                  <h3>{t("ngo.matches.yourDemand")}</h3>
+                  {(match.requirements || []).map((demand, index) => (
+                    <p key={`${demand.category}-${index}`}>
+                      {categoryLabel(demand.category)}
+                      {demand.subcategory
+                        ? ` / ${categoryLabel(demand.subcategory)}`
+                        : ` / ${t("ngo.matches.anySubcategory")}`}
+                      <span>
+                        {t("ngo.matches.needs")}: {demand.quantity_needed}
+                      </span>
+                    </p>
+                  ))}
+                </section>
+              </div>
+              <div className="ngo-match-card__actions">
                 <button
                   type="button"
-                  className="secondary-button"
-                  onClick={() => openMatch(match)}
+                  className="ngo-match-card__details-button"
+                  onClick={() => setSelectedMatch(match)}
                 >
-                  View details
+                  {t("ngo.matches.viewDetails")}
                 </button>
-                {canMutateMatch(match) ? (
-                  <>
-                    <button
-                      type="button"
-                      className="primary-button"
-                      disabled={actionId === match.id}
-                      onClick={() => updateMatch(match.id, "accept")}
-                    >
-                      {actionId === match.id ? "Saving..." : "Accept"}
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      disabled={actionId === match.id}
-                      onClick={() => updateMatch(match.id, "reject")}
-                    >
-                      Reject
-                    </button>
-                  </>
-                ) : null}
+                <div className="button-group">
+                  {["candidate", "recommended"].includes(match.status) && (
+                    <>
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() => handleAction(match.id, "accept")}
+                      >
+                        {t("common.confirm")}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => handleAction(match.id, "reject")}
+                      >
+                        {t("common.cancel")}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </article>
           ))}
         </div>
       ) : null}
-      {selectedMatch ? (
-        <div className="detail-panel">
-          <div className="section-heading">
-            <h2>Match details</h2>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => setSelectedMatch(null)}
-            >
-              Close
-            </button>
-          </div>
-          <StatusBadge status={selectedMatch.status} />
-          <p>Donation: {selectedMatch.donation_id?.slice(0, 8)}</p>
-          <p>
-            Match score:{" "}
-            {typeof selectedMatch.score === "number"
-              ? Math.round(selectedMatch.score * 100)
-              : 0}
-            %
-          </p>
-          <ul className="stack-list">
-            <li>
-              Category compatibility:{" "}
-              {Math.round(selectedMatch.item_match_score * 100)}%
-            </li>
-            <li>
-              Quantity fit: {Math.round(selectedMatch.quantity_score * 100)}%
-            </li>
-            <li>
-              Geographic proximity:{" "}
-              {Math.round(selectedMatch.distance_score * 100)}%
-            </li>
-            <li>
-              Demand priority: {Math.round(selectedMatch.priority_score * 100)}%
-            </li>
-          </ul>
-          {selectedMatch.rejection_reason ? (
-            <p>Rejection reason: {selectedMatch.rejection_reason}</p>
-          ) : null}
-        </div>
-      ) : null}
+      <MatchDetailsModal
+        match={selectedMatch}
+        onClose={() => setSelectedMatch(null)}
+      />
     </NGOShell>
   );
 }

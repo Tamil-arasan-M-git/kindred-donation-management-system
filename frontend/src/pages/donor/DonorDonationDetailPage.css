@@ -1,0 +1,90 @@
+.donor-journey-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(290px, 0.8fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.donor-journey-main {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.donor-journey-layout .wide-card,
+.donor-journey-history {
+  width: 100%;
+  margin: 0;
+  padding: 22px;
+  border: 1px solid #dfe6e2;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 5px 18px rgba(19, 58, 45, 0.035);
+}
+
+.donor-journey-history {
+  position: sticky;
+  top: 20px;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
+.donor-journey-history h2 {
+  margin: 0 0 16px;
+  color: #173e32;
+}
+.donor-journey-history .timeline-item {
+  padding: 12px 0;
+  border-bottom: 1px solid #edf0ee;
+}
+.donor-journey-history .timeline-item:last-child {
+  border-bottom: 0;
+}
+
+.donor-journey-main #pickup .pickup-scheduler label {
+  display: grid;
+  gap: 8px;
+  color: #50635a;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.donor-journey-main #pickup .pickup-scheduler input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #d8e2db;
+  border-radius: 11px;
+  background: #fff;
+  color: #233e33;
+}
+.donor-journey-main #pickup .pickup-scheduler input:focus {
+  border-color: #319676;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(49, 150, 118, 0.13);
+}
+
+@media (max-width: 980px) {
+  .donor-journey-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .donor-journey-history {
+    position: static;
+    max-height: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .donor-journey-layout {
+    gap: 12px;
+  }
+  .donor-journey-main {
+    gap: 12px;
+  }
+  .donor-journey-layout .wide-card,
+  .donor-journey-history {
+    padding: 16px;
+    border-radius: 13px;
+  }
+}

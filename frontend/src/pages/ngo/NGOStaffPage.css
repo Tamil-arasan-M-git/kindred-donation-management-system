@@ -1,0 +1,535 @@
+.ngo-staff-header-action {
+  flex: 0 1 660px;
+  width: min(100%, 660px);
+  min-width: 0;
+}
+.ngo-staff-header-art {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4.2 / 1;
+  object-fit: cover;
+  border-radius: 15px;
+}
+
+.ngo-staff-create-card,
+.ngo-staff-list-card {
+  min-width: 0;
+  margin-bottom: 18px;
+  padding: 18px;
+  border: 1px solid #dfe6e2;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 5px 18px rgba(19, 58, 45, 0.035);
+}
+.ngo-staff-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin: 0 0 18px 4px;
+}
+.ngo-staff-heading-icon {
+  display: grid;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 50%;
+  background: #def3e7;
+  color: #08785e;
+  font-size: 1.25rem;
+}
+.ngo-staff-section-heading h2 {
+  margin: 0 0 3px;
+  color: #193d32;
+  font-size: 1.16rem;
+}
+.ngo-staff-section-heading p {
+  margin: 0;
+  color: #748078;
+  font-size: 0.88rem;
+}
+.ngo-staff-create-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: end;
+  gap: 14px;
+}
+.ngo-staff-create-form > label,
+.ngo-staff-edit-form > label {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  color: #344940;
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+.ngo-staff-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid #d9e2dc;
+  border-radius: 10px;
+  background: #fff;
+  color: #34564a;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+.ngo-staff-input-wrap:focus-within {
+  border-color: #168064;
+  box-shadow: 0 0 0 3px rgba(22, 128, 100, 0.11);
+}
+.ngo-staff-input-wrap > i {
+  flex: 0 0 auto;
+  color: #61736b;
+  font-size: 1rem;
+}
+.ngo-staff-input-wrap input,
+.ngo-staff-input-wrap select {
+  width: 100%;
+  min-width: 0;
+  height: 43px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #263b33;
+  font: inherit;
+  font-size: 0.9rem;
+}
+.ngo-staff-input-wrap input::placeholder {
+  color: #8a9690;
+}
+.ngo-staff-create-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+.ngo-staff-create-actions button {
+  min-width: 126px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.ngo-staff-create-actions .primary-button {
+  background: #08785e;
+}
+
+.ngo-staff-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.ngo-staff-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 17px;
+  border: 1px solid #e1e7e2;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 4px 14px rgba(19, 58, 45, 0.025);
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+.ngo-staff-card:hover {
+  transform: translateY(-2px);
+  border-color: #ccded4;
+  box-shadow: 0 9px 22px rgba(19, 58, 45, 0.07);
+}
+.ngo-staff-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.ngo-staff-avatar {
+  display: grid;
+  flex: 0 0 66px;
+  width: 66px;
+  height: 66px;
+  place-items: center;
+  border-radius: 50%;
+  background: #fde9e4;
+  color: #bd471c;
+  font-size: 1.7rem;
+  font-weight: 750;
+}
+.ngo-staff-avatar-pickup {
+  background: #e3edff;
+  color: #2267bf;
+}
+.ngo-staff-avatar-packaging {
+  background: #eee4ff;
+  color: #7536b7;
+}
+.ngo-staff-card-identity {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 3px;
+}
+.ngo-staff-card-identity h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #173e32;
+  font-size: 1.2rem;
+}
+.ngo-staff-role {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 7px 11px;
+  overflow: hidden;
+  border-radius: 9px;
+  background: #f0e7ff;
+  color: #7040a8;
+  font-size: 0.8rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.ngo-staff-role-pickup {
+  background: #e5efff;
+  color: #2364b0;
+}
+.ngo-staff-role-delivery {
+  background: #ffede2;
+  color: #b4541a;
+}
+.ngo-staff-active {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: #e2f5e9;
+  color: #206b47;
+  font-size: 0.76rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.ngo-staff-active > i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #15935d;
+}
+.ngo-staff-active.is-inactive {
+  background: #f0f1ef;
+  color: #6a746e;
+}
+.ngo-staff-active.is-inactive > i {
+  background: #8a928d;
+}
+.ngo-staff-contact {
+  display: grid;
+  gap: 9px;
+  padding: 13px 2px 12px;
+  border-top: 1px solid #e9eeea;
+  border-bottom: 1px solid #e9eeea;
+}
+.ngo-staff-contact p {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  margin: 0;
+  color: #586a61;
+  font-size: 0.9rem;
+}
+.ngo-staff-contact i {
+  flex: 0 0 16px;
+  color: #234a3c;
+  font-size: 1rem;
+}
+.ngo-staff-contact span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ngo-staff-card-actions {
+  display: grid;
+  grid-template-columns: 0.78fr 1.25fr 0.9fr;
+  gap: 8px;
+  margin-top: auto;
+}
+.ngo-staff-card-actions button {
+  min-width: 0;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+.ngo-staff-edit-button {
+  background: #edf5f8;
+  color: #25483e;
+}
+.ngo-staff-toggle-button {
+  background: #fff5e6;
+  color: #8e5715;
+}
+.ngo-staff-delete-button {
+  background: #fff0ed;
+  color: #b63d32;
+}
+.ngo-staff-card-actions button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.ngo-staff-card-actions button:focus-visible,
+.ngo-staff-drawer-close:focus-visible {
+  outline: 2px solid #078266;
+  outline-offset: 2px;
+}
+
+.ngo-staff-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(19, 42, 33, 0.38);
+  animation: ngo-staff-backdrop-in 150ms ease-out;
+}
+.ngo-staff-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: min(510px, 100%);
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  padding: 25px 28px;
+  border-radius: 16px 0 0 16px;
+  background: #fffdf9;
+  box-shadow: -12px 0 38px rgba(12, 37, 27, 0.15);
+  animation: ngo-staff-drawer-in 180ms ease-out;
+}
+.ngo-staff-drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.ngo-staff-drawer-header h2 {
+  margin: 0 0 5px;
+  color: #153f33;
+  font-size: 1.45rem;
+}
+.ngo-staff-drawer-header p {
+  margin: 0;
+  color: #748078;
+  font-size: 0.9rem;
+}
+.ngo-staff-drawer-close {
+  display: grid;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: #f0f2ef;
+  color: #203c31;
+  font-size: 1.35rem;
+  cursor: pointer;
+}
+.ngo-staff-drawer-person {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 5px 0 2px;
+  color: #596a61;
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+.ngo-staff-drawer-person .ngo-staff-avatar {
+  flex-basis: 78px;
+  width: 78px;
+  height: 78px;
+  border: 4px solid #fff;
+  box-shadow: 0 0 0 1px #e5eae6;
+  font-size: 1.9rem;
+}
+.ngo-staff-edit-form {
+  display: grid;
+  gap: 15px;
+}
+.ngo-staff-edit-form > label {
+  gap: 8px;
+}
+.ngo-staff-edit-form .ngo-staff-input-wrap {
+  min-height: 47px;
+}
+.ngo-staff-edit-form .ngo-staff-input-wrap input,
+.ngo-staff-edit-form .ngo-staff-input-wrap select {
+  height: 45px;
+}
+.ngo-staff-status-dot {
+  display: block;
+  flex: 0 0 10px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #15935d;
+}
+.ngo-staff-status-dot.is-inactive {
+  background: #8a928d;
+}
+.ngo-staff-drawer-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 20px;
+}
+.ngo-staff-drawer-actions button {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.ngo-staff-drawer-actions .primary-button {
+  background: #064c3d;
+}
+@keyframes ngo-staff-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ngo-staff-drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0.7;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 1120px) {
+  .ngo-staff-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ngo-staff-create-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .ngo-staff-header-action {
+    flex: none;
+    width: 100%;
+  }
+  .ngo-staff-header-art {
+    aspect-ratio: 4.5 / 1;
+  }
+}
+
+@media (max-width: 560px) {
+  .ngo-staff-create-card,
+  .ngo-staff-list-card {
+    margin-bottom: 13px;
+    padding: 14px;
+    border-radius: 13px;
+  }
+  .ngo-staff-section-heading {
+    gap: 10px;
+    margin: 0 0 14px;
+  }
+  .ngo-staff-heading-icon {
+    flex-basis: 42px;
+    width: 42px;
+    height: 42px;
+    font-size: 1.05rem;
+  }
+  .ngo-staff-section-heading h2 {
+    font-size: 1.02rem;
+  }
+  .ngo-staff-section-heading p {
+    font-size: 0.8rem;
+  }
+  .ngo-staff-create-form {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 11px;
+  }
+  .ngo-staff-create-actions {
+    grid-column: auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .ngo-staff-create-actions button {
+    min-width: 0;
+  }
+  .ngo-staff-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 11px;
+  }
+  .ngo-staff-card {
+    padding: 14px;
+  }
+  .ngo-staff-avatar {
+    flex-basis: 56px;
+    width: 56px;
+    height: 56px;
+    font-size: 1.45rem;
+  }
+  .ngo-staff-card-identity h3 {
+    font-size: 1.08rem;
+  }
+  .ngo-staff-active {
+    padding: 6px 8px;
+    font-size: 0.7rem;
+  }
+  .ngo-staff-card-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .ngo-staff-card-actions button {
+    min-height: 41px;
+    gap: 5px;
+    padding: 6px 4px;
+    font-size: 0.72rem;
+  }
+  .ngo-staff-drawer {
+    width: 100%;
+    padding: 19px 17px;
+    border-radius: 0;
+  }
+  .ngo-staff-drawer-header h2 {
+    font-size: 1.28rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ngo-staff-drawer-backdrop,
+  .ngo-staff-drawer {
+    animation: none;
+  }
+}

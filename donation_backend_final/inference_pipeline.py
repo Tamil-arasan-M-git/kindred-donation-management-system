@@ -20,7 +20,7 @@ from ultralytics import YOLO
 
 from taxonomy import taxonomy_for_class
 
-MODEL_PATH = "runs/detect/donation_items_yolov8n/weights/best.pt"
+MODEL_PATH = r"C:\Users\Tamilarasan M\Downloads\best (1).pt"
 CONF_THRESHOLD = 0.35   # per-box confidence floor
 IOU_THRESHOLD = 0.45    # NMS overlap threshold (handled internally by ultralytics)
 MIN_QUANTITY_CONF = 0.5  # a class's aggregated confidence must clear this to be

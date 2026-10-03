@@ -1,0 +1,490 @@
+.ngo-profile-page-header .page-header {
+  align-items: center;
+  gap: 22px;
+  margin-bottom: 20px;
+}
+.ngo-profile-art-action {
+  flex: 0 1 490px;
+  width: min(100%, 490px);
+  min-width: 0;
+}
+.ngo-profile-header-art {
+  width: 100%;
+  aspect-ratio: 476 / 144;
+  overflow: hidden;
+  background: transparent;
+}
+.ngo-profile-header-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: right center;
+  border-radius: 14px;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    #000 15%,
+    #000 100%
+  );
+  mask-image: linear-gradient(90deg, transparent 0%, #000 15%, #000 100%);
+}
+
+.ngo-profile-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.18fr) minmax(350px, 0.86fr);
+  align-items: start;
+  gap: 18px;
+}
+.ngo-profile-card {
+  min-width: 0;
+  padding: 18px 20px;
+  border: 1px solid #dce4de;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 4px 16px rgba(19, 58, 45, 0.03);
+}
+.ngo-verification-strip {
+  display: grid;
+  grid-template-columns: 44px auto auto minmax(100px, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 17px;
+  padding: 11px 13px;
+  border-radius: 11px;
+}
+.ngo-verification-strip.is-verified {
+  background: #e6f4ed;
+}
+.ngo-verification-strip.is-unverified {
+  background: #fff2df;
+}
+.ngo-verification-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.72);
+  color: #148661;
+  font-size: 1.3rem;
+}
+.ngo-verification-strip.is-unverified .ngo-verification-icon {
+  color: #b57520;
+}
+.ngo-verification-strip > strong {
+  color: #26443a;
+  font-size: 0.89rem;
+}
+.ngo-verification-strip > small {
+  color: #748078;
+  font-size: 0.76rem;
+}
+.ngo-verification-badge,
+.ngo-profile-verified-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.ngo-verification-badge.is-verified,
+.ngo-profile-verified-pill.is-verified {
+  background: #ccebdc;
+  color: #08714f;
+}
+.ngo-verification-badge.is-unverified,
+.ngo-profile-verified-pill.is-unverified {
+  background: #ffebc9;
+  color: #9a611a;
+}
+.ngo-profile-section-heading,
+.ngo-profile-location-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ngo-profile-section-icon {
+  flex: 0 0 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #ddf1e5;
+  color: #08785e;
+  font-size: 1.12rem;
+}
+.ngo-profile-section-icon.icon-warm {
+  background: #fff0d0;
+  color: #bd7a12;
+}
+.ngo-profile-section-heading h2,
+.ngo-profile-location-heading h2 {
+  margin: 0 0 3px;
+  color: #183d31;
+  font-size: 1.04rem;
+}
+.ngo-profile-section-heading p,
+.ngo-profile-location-heading p {
+  margin: 0;
+  color: #748078;
+  font-size: 0.82rem;
+}
+.ngo-profile-fields {
+  display: grid;
+  gap: 10px;
+}
+.ngo-profile-field {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+.ngo-profile-field > i {
+  justify-self: center;
+  color: #164b3b;
+  font-size: 1.04rem;
+}
+.ngo-profile-field label,
+.ngo-profile-coordinate-grid label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  color: #344940;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.ngo-profile-field input,
+.ngo-profile-field textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 11px;
+  border: 1px solid #d9e1dc;
+  border-radius: 9px;
+  outline: 0;
+  background: #fff;
+  color: #263b33;
+  font: inherit;
+  font-weight: 400;
+  resize: vertical;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+.ngo-profile-field input:focus,
+.ngo-profile-field textarea:focus,
+.ngo-coordinate-input:focus-within {
+  border-color: #19785e;
+  box-shadow: 0 0 0 3px rgba(25, 120, 94, 0.11);
+}
+.ngo-profile-field input[readonly] {
+  background: #eef1ee;
+  color: #65716b;
+}
+.ngo-profile-field small {
+  color: #78837d;
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+.ngo-profile-location-heading {
+  margin: 16px 0 10px;
+  padding-top: 14px;
+  border-top: 1px solid #e6ebe7;
+}
+.ngo-profile-coordinate-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.ngo-coordinate-input {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid #d9e1dc;
+  border-radius: 9px;
+  background: #fff;
+  color: #285446;
+}
+.ngo-coordinate-input > i {
+  flex: 0 0 15px;
+  font-size: 0.92rem;
+}
+.ngo-coordinate-input input {
+  min-width: 0;
+  width: 100%;
+  height: 38px;
+  padding: 7px 3px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #263b33;
+  font: inherit;
+  font-weight: 400;
+}
+.ngo-coordinate-input input:focus {
+  box-shadow: none;
+}
+.ngo-profile-save {
+  width: 100%;
+  min-height: 43px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 14px;
+  background: #08785e;
+  border-color: #08785e;
+}
+.ngo-profile-save:hover {
+  background: #06664f;
+  border-color: #06664f;
+}
+.ngo-profile-sidebar {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+.ngo-profile-overview {
+  padding: 24px 20px;
+}
+.ngo-profile-person {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr);
+  align-items: center;
+  gap: 15px;
+}
+.ngo-profile-avatar {
+  width: 116px;
+  height: 116px;
+  display: grid;
+  place-items: center;
+  border: 5px solid #fff;
+  border-radius: 50%;
+  background: #c7ecde;
+  color: #08785e;
+  box-shadow: 0 0 0 1px #d5e8de;
+  font-size: 2.35rem;
+}
+.ngo-profile-person-details {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  color: #58675f;
+  font-size: 0.86rem;
+}
+.ngo-profile-person-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.ngo-profile-person-details strong {
+  color: #1c3d32;
+  font-size: 1.08rem;
+  overflow-wrap: anywhere;
+}
+.ngo-profile-person-details span {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  overflow-wrap: anywhere;
+}
+.ngo-profile-person-details span > i {
+  flex: 0 0 15px;
+  margin-top: 2px;
+  color: #174d3d;
+}
+.ngo-profile-verified-pill {
+  justify-self: start;
+}
+.ngo-profile-benefits {
+  padding: 18px;
+}
+.ngo-profile-benefits .ngo-profile-section-heading {
+  margin-bottom: 13px;
+}
+.ngo-profile-benefit {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 11px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 11px;
+}
+.ngo-profile-benefit > span {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.65);
+  font-size: 1.05rem;
+}
+.ngo-profile-benefit strong {
+  color: #263e34;
+  font-size: 0.88rem;
+}
+.ngo-profile-benefit p {
+  margin: 3px 0 0;
+  color: #68766f;
+  font-size: 0.78rem;
+}
+.ngo-profile-benefit > i:last-child {
+  font-size: 0.9rem;
+}
+.benefit-match {
+  background: #e8f4ed;
+  color: #14835f;
+}
+.benefit-trust {
+  background: #e9f1fc;
+  color: #2d69ac;
+}
+.benefit-impact {
+  background: #fff0e6;
+  color: #cf6724;
+}
+.ngo-profile-notice {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 14px;
+}
+
+@media (max-width: 1000px) {
+  .ngo-profile-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ngo-profile-sidebar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .ngo-profile-art-action {
+    flex-basis: 42%;
+  }
+}
+
+@media (max-width: 768px) {
+  .ngo-profile-page-header .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .ngo-profile-art-action {
+    flex: none;
+    width: 100%;
+    max-width: 490px;
+  }
+  .ngo-profile-header-art {
+    width: 100%;
+  }
+}
+
+@media (max-width: 620px) {
+  .ngo-profile-layout {
+    gap: 12px;
+  }
+  .ngo-profile-card {
+    padding: 15px;
+    border-radius: 13px;
+  }
+  .ngo-verification-strip {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 10px;
+  }
+  .ngo-verification-icon {
+    width: 38px;
+    height: 38px;
+  }
+  .ngo-verification-strip > strong {
+    font-size: 0.8rem;
+  }
+  .ngo-verification-strip > small {
+    grid-column: 2 / -1;
+  }
+  .ngo-verification-badge {
+    padding: 5px 8px;
+    font-size: 0.7rem;
+  }
+  .ngo-profile-section-heading,
+  .ngo-profile-location-heading {
+    gap: 10px;
+  }
+  .ngo-profile-section-icon {
+    flex-basis: 41px;
+    height: 41px;
+  }
+  .ngo-profile-section-heading h2,
+  .ngo-profile-location-heading h2 {
+    font-size: 0.98rem;
+  }
+  .ngo-profile-section-heading p,
+  .ngo-profile-location-heading p {
+    font-size: 0.77rem;
+  }
+  .ngo-profile-field {
+    grid-template-columns: 21px minmax(0, 1fr);
+    gap: 7px;
+  }
+  .ngo-profile-field > i {
+    font-size: 0.94rem;
+  }
+  .ngo-profile-sidebar {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .ngo-profile-person {
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .ngo-profile-avatar {
+    width: 84px;
+    height: 84px;
+    font-size: 1.8rem;
+  }
+  .ngo-profile-person-details {
+    gap: 8px;
+    font-size: 0.8rem;
+  }
+  .ngo-profile-person-details strong {
+    font-size: 0.98rem;
+  }
+  .ngo-profile-verified-pill {
+    padding: 5px 8px;
+    font-size: 0.68rem;
+  }
+  .ngo-profile-benefit {
+    gap: 9px;
+    padding: 9px;
+  }
+  .ngo-profile-header-art {
+    aspect-ratio: 3.3 / 1;
+  }
+}
+
+@media (max-width: 380px) {
+  .ngo-profile-coordinate-grid {
+    grid-template-columns: 1fr;
+  }
+  .ngo-profile-person {
+    grid-template-columns: 1fr;
+  }
+  .ngo-profile-avatar {
+    width: 72px;
+    height: 72px;
+  }
+  .ngo-profile-person-heading {
+    gap: 6px;
+  }
+}

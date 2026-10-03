@@ -1,0 +1,62 @@
+.admin-match-grid {
+  margin-top: 20px;
+}
+.admin-match-card {
+  min-height: 100%;
+}
+.admin-match-card__ngo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 14px 0 0;
+  color: #294b3d;
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+.admin-match-card__ngo i {
+  flex: 0 0 auto;
+  color: #168064;
+  font-size: 1rem;
+}
+.admin-match-card__ngo span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.admin-match-card .ngo-match-card__donation-id {
+  margin: 5px 0 12px;
+}
+.admin-match-card .ngo-match-card__details {
+  margin-bottom: 16px;
+}
+.admin-match-card .ngo-match-card__details section {
+  display: grid;
+  gap: 5px;
+}
+.admin-match-card .ngo-match-card__details p {
+  align-items: baseline;
+}
+.admin-match-card .ngo-match-card__actions {
+  margin-top: auto;
+}
+.admin-match-card .ngo-match-card__details-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.admin-match-card .ngo-match-card__details-button i {
+  font-size: 0.95rem;
+}
+
+@media (max-width: 640px) {
+  .admin-match-grid {
+    margin-top: 14px;
+  }
+  .admin-match-card .ngo-match-card__header {
+    gap: 9px;
+  }
+  .admin-match-card__ngo {
+    margin-top: 12px;
+  }
+}
